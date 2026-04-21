@@ -6,7 +6,7 @@
     <title>3D 音樂視覺化與 MP4 導出工具 (現場收音加強版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- 【修正】改用更穩定的 jsdelivr CDN 載入 FFmpeg，解決 unpkg 容易連線中斷的問題 -->
+    <!-- 使用穩定的 jsdelivr CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
     
@@ -421,7 +421,6 @@
     </div>
 
     <div id="loading-overlay" class="fixed inset-0 bg-black/80 z-[200] hidden flex-col items-center justify-center backdrop-blur-sm">
-        <!-- 【修正2】加入強制關閉按鈕，防止錄影錯誤時整個網頁卡死 -->
         <button id="cancel-export-btn" class="absolute top-6 right-6 text-gray-400 hover:text-red-500 transition-colors bg-gray-800 hover:bg-gray-700 rounded-full p-2 shadow-lg z-50">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
         </button>
@@ -430,7 +429,7 @@
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <h2 class="text-2xl font-bold text-white mb-2">正在處理影片...</h2>
-        <p id="loading-text" class="text-gray-400 text-sm mb-6">正在使用 FFmpeg 轉碼為 MP4，這可能需要幾分鐘的時間，請勿關閉視窗。</p>
+        <p id="loading-text" class="text-gray-400 text-sm mb-6">正在執行極速封裝處理，請勿關閉視窗。</p>
         
         <div id="progress-container" class="w-full max-w-md hidden flex-col items-center">
             <div class="w-full bg-gray-700 rounded-full h-3 mb-2 overflow-hidden border border-gray-600">
@@ -455,7 +454,12 @@
             dataArray: new Uint8Array(512), 
             isPlaying: false,
             isRecording: false,
-            recordMimeType: 'video/webm', // 紀錄實際的錄製格式
+            recordMimeType: 'video/webm', 
+            
+            // 【極速導出核心】隱藏畫布 (直接在 GPU 層面完成縮放與裁切，不用依賴外部軟體轉碼)
+            recordCanvas: null,
+            recordCtx: null,
+
             currentScene: 0,
             bassHitTimer: 0,
             hueOffset: 0,
@@ -943,7 +947,7 @@
         
         chkAutoScene.addEventListener('change', (e) => { 
             state.isAutoMode = e.target.checked; 
-            showStatus(state.isAutoMode ? '自動模式開啟' : '手 মোক模式開啟'); 
+            showStatus(state.isAutoMode ? '自動模式開啟' : '手動模式開啟'); 
         });
 
         document.getElementById('btn-prev-scene').addEventListener('click', () => {
@@ -991,7 +995,8 @@
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 50;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        // 【優化】加入 preserveDrawingBuffer 確保 GPU 隱藏畫布能正確擷取畫面，不出現黑畫面
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
         // 允許疊加渲染，保護歌詞不被背景吃掉
@@ -1001,7 +1006,7 @@
         const composer = new THREE.EffectComposer(renderer);
         const renderPass = new THREE.RenderPass(scene, camera);
         
-        // 【修復殘影問題】恢復清除功能，並設定為透明的黑色背景，避免拖影無限堆疊，同時保留底圖的能見度
+        // 恢復清除功能，並設定為透明的黑色背景，避免拖影無限堆疊，同時保留底圖的能見度
         renderPass.clear = true; 
         renderPass.clearColor = new THREE.Color(0x000000);
         renderPass.clearAlpha = 0;
@@ -1568,7 +1573,7 @@
         ui.btnMicSource.addEventListener('click', () => startLiveAudio('mic'));
         ui.btnSystemSource.addEventListener('click', () => startLiveAudio('system'));
 
-        // [重大修復] 重構音訊路由，確保 MP3 永遠有聲音
+        // 重構音訊路由，確保 MP3 永遠有聲音
         function playAudio(offset = 0) {
             if (!state.audioBuffer && !state.isMicMode) return showStatus('請先載入 MP3 音訊');
             if (state.isMicMode) stopAudio(); 
@@ -1578,7 +1583,6 @@
             state.source = state.audioContext.createBufferSource(); 
             state.source.buffer = state.audioBuffer;
             
-            // 確保分析器與錄影端點存在
             if (!state.analyser) {
                 state.analyser = state.audioContext.createAnalyser(); 
                 state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.85; 
@@ -1592,15 +1596,12 @@
                 state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize);
             }
 
-            // 清除所有的舊連線，確保乾淨路由
             state.analyser.disconnect();
             state.tunerAnalyser.disconnect();
 
-            // 建立 MP3 專用連線 (音軌 -> 分析器 -> 喇叭與錄影機)
             state.source.connect(state.analyser); 
             state.source.connect(state.tunerAnalyser);
             
-            // 【修正4】直接將 source 音軌連接到喇叭，不透過 analyser 轉接，確保重新播放時絕對有聲音
             state.source.connect(state.audioContext.destination); 
             if (state.mediaStreamDestination) state.source.connect(state.mediaStreamDestination);
             
@@ -1643,7 +1644,6 @@
         });
 
         ui.playBtn.addEventListener('click', async () => {
-            // 【修正5】點擊播放時確保 AudioContext 被喚醒，解決部分瀏覽器重整後沒聲音的問題
             if (state.audioContext && state.audioContext.state === 'suspended') {
                 await state.audioContext.resume();
             }
@@ -2008,32 +2008,93 @@
                 }
             }
 
-            // [重大修復] 分離圖層，確保底圖不被渲染特效干擾！
             renderer.clear();
-            
-            // 1. 畫純淨的底圖/影片 (獨立於 Bloom 之外，保持原始亮度不變色)
             renderer.render(bgScene, camera);
             renderer.clearDepth();
-
-            // 2. 畫 3D 場景特效 (透過 AdditiveBlending 疊加到底圖上，保留光暈)
             composer.render(); 
-            
-            // 3. 畫純文字歌詞 (保持最上層清晰)
             renderer.clearDepth(); 
             renderer.render(lyricsScene, camera); 
+            
+            // 【極速導出核心】在錄影模式下，將畫面繪製到「符合目標解析度」的隱藏 GPU 畫布上
+            if (state.isRecording && state.recordCtx) {
+                const sw = renderer.domElement.width;
+                const sh = renderer.domElement.height;
+                const tw = state.recordCanvas.width;
+                const th = state.recordCanvas.height;
+                
+                const sRatio = sw / sh;
+                const tRatio = tw / th;
+                let cropW = sw, cropH = sh, cropX = 0, cropY = 0;
+
+                // Object-fit: cover 的數學演算法，保持畫面比例不變形
+                if (sRatio > tRatio) {
+                    cropW = sh * tRatio;
+                    cropX = (sw - cropW) / 2;
+                } else {
+                    cropH = sw / tRatio;
+                    cropY = (sh - cropH) / 2;
+                }
+
+                state.recordCtx.fillStyle = 'black';
+                state.recordCtx.fillRect(0, 0, tw, th);
+                state.recordCtx.drawImage(renderer.domElement, cropX, cropY, cropW, cropH, 0, 0, tw, th);
+            }
         }
         animate();
 
         // ==========================================
-        // 6. 影片錄製與 FFmpeg 轉檔 MP4
+        // 6. 極速影片錄製與容器秒換技術 (Stream Copy)
         // ==========================================
         let mediaRecorder, recordedChunks = [], ffmpeg = null;
+
+        // 取得瀏覽器支援的最高效編碼格式 (優先選擇 H.264 以支援 FFmpeg 秒換 MP4)
+        function getBestMimeType() {
+            const types = [
+                'video/mp4;codecs=avc1', // Safari 或新版 Chrome 原生支援
+                'video/mp4',
+                'video/webm;codecs=h264', // Chrome/Edge 高速支援 (可秒換殼)
+                'video/webm;codecs=vp9',
+                'video/webm'
+            ];
+            for (const t of types) {
+                if (MediaRecorder.isTypeSupported(t)) return t;
+            }
+            return 'video/webm';
+        }
 
         async function startRecording() {
             if(!state.isPlaying) ui.playBtn.click(); 
             recordedChunks = [];
-            const quality = document.getElementById('export-quality').value; const fps = quality === 'fast' ? 30 : 60;
-            const canvasStream = renderer.domElement.captureStream(fps); const tracks = [...canvasStream.getTracks()];
+            
+            const quality = document.getElementById('export-quality').value; 
+            const ratio = document.getElementById('export-ratio').value;
+            const isFast = quality === 'fast';
+            const fps = isFast ? 30 : 60;
+            
+            // 【極速導出核心】預先建立與目標尺寸一模一樣的隱藏畫布，免除事後軟體縮放
+            state.recordCanvas = document.createElement('canvas');
+            const baseRes = isFast ? 720 : 1080;
+            let W, H;
+            
+            if (ratio === '16:9') { W = Math.round((baseRes * 16) / 9); H = baseRes; }
+            else if (ratio === '9:16') { W = baseRes; H = Math.round((baseRes * 16) / 9); }
+            else {
+                const ar = window.innerWidth / window.innerHeight;
+                if (ar > 1) { H = baseRes; W = Math.round(baseRes * ar); }
+                else { W = baseRes; H = Math.round(baseRes / ar); }
+            }
+
+            // H.264 影片尺寸必須是偶數
+            W = Math.floor(W / 2) * 2;
+            H = Math.floor(H / 2) * 2;
+
+            state.recordCanvas.width = W;
+            state.recordCanvas.height = H;
+            state.recordCtx = state.recordCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
+
+            // 從隱藏的、已縮放完成的畫布擷取串流
+            const canvasStream = state.recordCanvas.captureStream(fps); 
+            const tracks = [...canvasStream.getTracks()];
             state.hasAudioTrack = false;
             
             if (state.isMicMode && state.micStream) {
@@ -2043,16 +2104,13 @@
             }
 
             const combinedStream = new MediaStream(tracks); 
-            const options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 };
+            const mimeType = getBestMimeType();
+            const options = { mimeType: mimeType, videoBitsPerSecond: 8000000 };
             
-            // 【修復】動態抓取實際錄製格式 (解決 Safari/macOS 預設錄成 MP4 卻被當成 WebM 的嚴重錯誤)
-            try { 
-                mediaRecorder = new MediaRecorder(combinedStream, options); 
-            } catch (e) { 
-                mediaRecorder = new MediaRecorder(combinedStream); 
-            }
+            try { mediaRecorder = new MediaRecorder(combinedStream, options); } 
+            catch (e) { mediaRecorder = new MediaRecorder(combinedStream); }
             
-            state.recordMimeType = mediaRecorder.mimeType || 'video/webm';
+            state.recordMimeType = mediaRecorder.mimeType || mimeType;
 
             mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
             mediaRecorder.onstop = async () => { await processVideo(); };
@@ -2082,33 +2140,31 @@
 
         ui.recordBtn.addEventListener('click', () => { state.isRecording ? stopRecording() : startRecording(); });
 
-        // 強制取消錄影處理的監聽器
         document.getElementById('cancel-export-btn').addEventListener('click', () => {
-            ui.loadingOverlay.classList.add('hidden'); 
-            ui.loadingOverlay.style.display = 'none';
+            ui.loadingOverlay.classList.add('hidden'); ui.loadingOverlay.style.display = 'none';
             showStatus('已強制取消影片處理程序，恢復系統操作。');
         });
 
         async function processVideo() {
-            // 安全機制：如果錄影過短或中斷導致沒錄到資料，直接擋下，避免 FFmpeg 卡死
             if (!recordedChunks || recordedChunks.length === 0) {
-                showStatus('錄製失敗：沒有擷取到足夠的畫面資料。');
-                return;
+                showStatus('錄製失敗：沒有擷取到足夠的畫面資料。'); return;
             }
             
             const quality = document.getElementById('export-quality').value; 
-            const ratio = document.getElementById('export-ratio').value;
-            
-            // 【修復】使用實際錄製到的格式，而非強硬指定 WebM
+            const isFast = quality === 'fast';
             const mimeType = state.recordMimeType || 'video/webm';
             const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-            const inputName = `input.${ext}`;
             const videoBlob = new Blob(recordedChunks, { type: mimeType });
             
             if (quality === 'webm') { 
                 downloadBlob(videoBlob, `visualizer_raw.${ext}`); 
-                showStatus(`⚡ 極速原檔 (${ext}) 導出完成！`); 
-                return; 
+                showStatus(`⚡ 極速原檔 (${ext}) 導出完成！`); return; 
+            }
+
+            // 【極速導出核心】方案 A：如果瀏覽器原生就是 MP4，一秒都不用等，直接下載！
+            if (mimeType.includes('mp4')) {
+                showStatus('⚡ 偵測到原生 MP4 支援，極速導出成功！');
+                downloadBlob(videoBlob, 'visualizer_pro.mp4'); return;
             }
 
             ui.loadingOverlay.classList.remove('hidden'); ui.loadingOverlay.style.display = 'flex';
@@ -2120,14 +2176,12 @@
                     ffmpeg.on('log', ({ message }) => console.log(message));
                     ffmpeg.on('progress', ({ progress }) => { 
                         const percent = Math.min(100, Math.max(0, Math.round(progress * 100))); 
-                        ui.progressBar.style.width = `${percent}%`; 
-                        ui.progressText.textContent = `${percent}%`; 
+                        ui.progressBar.style.width = `${percent}%`; ui.progressText.textContent = `${percent}%`; 
                     });
                 }
                 
                 if (!ffmpeg.loaded) {
-                    // 【防卡死機制】加入超時判定，避免因為外部資源下載卡死導致無限轉圈
-                    ui.loadingText.textContent = '正在從外部伺服器下載轉碼引擎 (約 30MB，需時較長請稍候)...';
+                    ui.loadingText.textContent = '正在從外部伺服器下載轉碼引擎 (約 30MB，首次需要數秒)...';
                     const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
                     const toBlobURL = window.FFmpegUtil.toBlobURL;
                     
@@ -2138,54 +2192,44 @@
                         });
                     };
 
-                    // 加入 45 秒超時防護，超過時間則丟出錯誤，進入 catch 區塊
-                    const timeoutTask = new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error("下載外部轉碼引擎超時 (可能是您的網路過慢或被防火牆阻擋)")), 45000)
-                    );
-
+                    const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("下載外部轉碼引擎超時")), 45000));
                     await Promise.race([loadTask(), timeoutTask]);
                 }
 
                 ui.loadingText.textContent = '正在寫入暫存檔案...'; 
+                const inputName = `input.${ext}`;
                 await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(videoBlob));
                 
-                ui.loadingText.textContent = '正在進行高效轉碼，請耐心等候...'; 
                 ui.progressContainer.classList.remove('hidden'); ui.progressContainer.classList.add('flex');
                 
-                const isFast = quality === 'fast'; let vfFilter = '';
-                if (ratio === '16:9') { const outW = isFast ? 1280 : 1920; const outH = isFast ? 720 : 1080; vfFilter = `crop=w='min(iw,ih*16/9)':h='min(ih,iw*9/16)',scale=${outW}:${outH}`;
-                } else if (ratio === '9:16') { const outW = isFast ? 720 : 1080; const outH = isFast ? 1280 : 1920; vfFilter = `crop=w='min(iw,ih*9/16)':h='min(ih,iw*16/9)',scale=${outW}:${outH}`;
-                } else { vfFilter = isFast ? 'scale=-2:720' : 'scale=trunc(iw/2)*2:trunc(ih/2)*2'; }
+                // 檢查是否是 H.264 的 WebM，這是我們觸發秒換技術的關鍵
+                const isH264 = mimeType.includes('h264');
+                const ffmpegArgs = ['-i', inputName];
 
-                // 【修復】將轉碼預設值改為 ultrafast (極速模式)，防止瀏覽器在 1080p 處理中發生記憶體溢出 (OOM) 導致崩潰卡死
-                const ffmpegArgs = [
-                    '-i', inputName, 
-                    '-c:v', 'libx264', 
-                    '-preset', 'ultrafast', 
-                    '-crf', isFast ? '28' : '23', 
-                    '-r', isFast ? '30' : '60', 
-                    '-pix_fmt', 'yuv420p', 
-                    '-movflags', '+faststart', 
-                    '-vf', vfFilter
-                ];
+                if (isH264) {
+                    // 【極速導出核心】方案 B：容器秒換技術 (Stream Copy)。完全不重新運算畫面，速度快 100 倍！
+                    ffmpegArgs.push('-c:v', 'copy');
+                    ui.loadingText.textContent = '偵測到 H.264 編碼，執行極速封裝 (無需重轉畫面)...';
+                } else {
+                    // 方案 C：如果瀏覽器太舊只支援 VP8/VP9，還是得轉碼，但因為已經沒有外部縮放負擔，速度依然大幅提升。
+                    ffmpegArgs.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', isFast ? '28' : '23', '-pix_fmt', 'yuv420p');
+                    ui.loadingText.textContent = '正在進行高效轉碼 (由於瀏覽器不支援 H.264，此步驟較耗時)...';
+                }
 
-                if (state.hasAudioTrack) ffmpegArgs.push('-c:a', 'aac', '-b:a', isFast ? '128k' : '320k', '-ar', '44100'); 
-                
-                ffmpegArgs.push('output.mp4'); 
+                if (state.hasAudioTrack) ffmpegArgs.push('-c:a', 'aac', '-b:a', isFast ? '128k' : '320k'); 
+                ffmpegArgs.push('-movflags', '+faststart', 'output.mp4'); 
                 await ffmpeg.exec(ffmpegArgs);
 
-                ui.loadingText.textContent = '轉碼完成！準備下載...'; 
+                ui.loadingText.textContent = '處理完成！準備下載...'; 
                 const data = await ffmpeg.readFile('output.mp4'); 
                 const mp4Blob = new Blob([data], { type: 'video/mp4' });
                 downloadBlob(mp4Blob, 'visualizer_pro.mp4'); 
                 
-                await ffmpeg.deleteFile(inputName); 
-                await ffmpeg.deleteFile('output.mp4');
+                await ffmpeg.deleteFile(inputName); await ffmpeg.deleteFile('output.mp4');
 
             } catch (error) {
-                console.error("FFmpeg 轉檔失敗:", error); 
-                // 【優化】明確告知用戶是外部引擎的問題，並自動提供無損的原檔下載，保障心血不白費
-                alert(`前端 MP4 轉碼發生異常 (${error.message || '未知錯誤'})\n\n這通常是因為網路阻擋了轉碼引擎，或記憶體不足。系統已為您自動降級導出原始影片檔案！\n建議：您可以直接將畫質選為「⚡ WebM (免轉)」，即可一秒匯出。`); 
+                console.error("處理失敗:", error); 
+                alert(`前端影片處理發生異常 (${error.message || '未知錯誤'})\n\n這通常是因為網路阻擋了轉碼引擎。系統已為您自動導出原始 WebM 影片！`); 
                 downloadBlob(videoBlob, `visualizer_fallback.${ext}`);
             } finally {
                 ui.loadingOverlay.classList.add('hidden'); ui.loadingOverlay.style.display = 'none'; showStatus('錄製與導出完成！');
