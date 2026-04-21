@@ -46,6 +46,29 @@
         </div>
     </div>
 
+    <!-- 收音來源選擇遮罩 -->
+    <div id="audio-source-modal" class="hidden fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="relative bg-gray-900 border border-gray-700 rounded-3xl w-11/12 max-w-sm p-8 flex flex-col items-center shadow-2xl">
+            <button id="close-audio-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-full p-2 transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h2 class="text-xl font-bold text-white mb-6 text-center">選擇收音來源</h2>
+            
+            <button id="btn-mic-source" class="w-full mb-4 flex items-center justify-center gap-3 bg-gray-800 hover:bg-purple-600 text-white py-3 px-4 rounded-xl transition-colors border border-gray-700 hover:border-purple-500">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                <span class="font-medium">🎤 麥克風 (外部收音)</span>
+            </button>
+            
+            <button id="btn-system-source" class="w-full flex items-center justify-center gap-3 bg-gray-800 hover:bg-blue-600 text-white py-3 px-4 rounded-xl transition-colors border border-gray-700 hover:border-blue-500">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                <span class="font-medium">💻 電腦內部音源 (系統音訊)</span>
+            </button>
+            <p class="text-gray-400 text-[11px] mt-4 text-center leading-relaxed">
+                💡 提示：選擇電腦內部音源時，請在彈出視窗中選擇「分頁」或「整個螢幕」，並務必勾選<strong class="text-blue-400">「分享系統音訊」</strong>。
+            </p>
+        </div>
+    </div>
+
     <div id="canvas-container"></div>
 
     <!-- 依據偏好設定加入的免責聲明 -->
@@ -284,7 +307,13 @@
             lyricsInput: document.getElementById('lyrics-input'),
             dropZone: document.getElementById('drop-zone'),
             closeDropZone: document.getElementById('close-drop-zone'),
-            micBtn: document.getElementById('mic-btn')
+            micBtn: document.getElementById('mic-btn'),
+            
+            // 新增：音源選擇 Modal 的 UI 綁定
+            audioSourceModal: document.getElementById('audio-source-modal'),
+            closeAudioModal: document.getElementById('close-audio-modal'),
+            btnMicSource: document.getElementById('btn-mic-source'),
+            btnSystemSource: document.getElementById('btn-system-source')
         };
 
         ui.autoHideUi.addEventListener('change', (e) => {
@@ -889,44 +918,93 @@
         });
         ui.closeDropZone.addEventListener('click', () => ui.dropZone.classList.add('hidden'));
 
-        ui.micBtn.addEventListener('click', async () => {
+        // ==========================================
+        // 現場收音模式 (麥克風 / 系統音訊)
+        // ==========================================
+        ui.micBtn.addEventListener('click', () => {
             if (state.isMicMode) {
                 stopAudio(); 
             } else {
-                if (state.isPlaying) stopAudio(); 
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-                    state.micStream = stream;
-                    if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    if (state.audioContext.state === 'suspended') await state.audioContext.resume();
-
-                    state.source = state.audioContext.createMediaStreamSource(stream);
-                    state.analyser = state.audioContext.createAnalyser();
-                    state.analyser.fftSize = 512;
-                    state.analyser.smoothingTimeConstant = 0.85; 
-                    state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
-                    
-                    state.source.connect(state.analyser);
-                    
-                    state.isMicMode = true;
-                    state.isPlaying = true;
-                    
-                    ui.micBtn.querySelector('div').classList.add('bg-red-500/50', 'border-red-500');
-                    ui.playBtn.disabled = true; 
-                    ui.recordBtn.disabled = false; 
-
-                    if (ui.autoHideUi.checked) {
-                        ui.titleContainer.classList.add('opacity-0', 'pointer-events-none');
-                        ui.instructionsContainer.classList.add('opacity-0', 'pointer-events-none');
-                        ui.lyricsContainer.classList.add('opacity-0', 'pointer-events-none');
-                    }
-                    showStatus('現場收音已啟動，請發出聲音');
-                } catch (err) {
-                    console.error("Mic Access Error:", err);
-                    showStatus('無法啟動麥克風，請檢查瀏覽器權限或設備連接狀態');
-                }
+                ui.audioSourceModal.classList.remove('hidden');
             }
         });
+
+        ui.closeAudioModal.addEventListener('click', () => {
+            ui.audioSourceModal.classList.add('hidden');
+        });
+
+        async function startLiveAudio(sourceType) {
+            ui.audioSourceModal.classList.add('hidden');
+            if (state.isPlaying) stopAudio(); 
+            
+            try {
+                let stream;
+                if (sourceType === 'mic') {
+                    // 麥克風收音 (啟用回音消除與降噪)
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+                    });
+                } else if (sourceType === 'system') {
+                    // 電腦內部音源收音 (關閉降噪以保留完整的低音與音樂細節)
+                    stream = await navigator.mediaDevices.getDisplayMedia({ 
+                        video: true, // 瀏覽器通常要求 getDisplayMedia 必須包含 video
+                        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+                    });
+                    
+                    // 檢查使用者是否有勾選「分享音訊」
+                    if (stream.getAudioTracks().length === 0) {
+                        stream.getTracks().forEach(track => track.stop());
+                        throw new Error('未分享音訊');
+                    }
+                }
+
+                state.micStream = stream;
+                if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+
+                state.source = state.audioContext.createMediaStreamSource(stream);
+                state.analyser = state.audioContext.createAnalyser();
+                state.analyser.fftSize = 512;
+                state.analyser.smoothingTimeConstant = 0.85; 
+                state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
+                
+                state.source.connect(state.analyser);
+                
+                state.isMicMode = true;
+                state.isPlaying = true;
+                
+                ui.micBtn.querySelector('div').classList.add('bg-red-500/50', 'border-red-500');
+                ui.playBtn.disabled = true; 
+                ui.recordBtn.disabled = false; 
+
+                if (ui.autoHideUi.checked) {
+                    ui.titleContainer.classList.add('opacity-0', 'pointer-events-none');
+                    ui.instructionsContainer.classList.add('opacity-0', 'pointer-events-none');
+                    ui.lyricsContainer.classList.add('opacity-0', 'pointer-events-none');
+                }
+                
+                showStatus(sourceType === 'mic' ? '🎤 麥克風收音已啟動' : '💻 電腦內部音源已連接');
+                
+                // 當使用者從瀏覽器介面點擊「停止分享」時自動停止
+                stream.getVideoTracks().forEach(track => {
+                    track.onended = () => { if(state.isMicMode) stopAudio(); };
+                });
+
+            } catch (err) {
+                console.error("Audio Access Error:", err);
+                if (err.message === '未分享音訊') {
+                    showStatus('未偵測到音訊！請確保在選擇視窗中勾選了「分享系統音訊」。', 5000);
+                } else if (err.name === 'NotAllowedError' || (err.message && err.message.includes('display-capture'))) {
+                    // 處理 iframe 環境下的 Permissions Policy 阻擋問題
+                    showStatus('無法擷取系統音訊：當前預覽環境的安全性限制不允許。請改用「🎤 麥克風」或上傳 MP3。', 6000);
+                } else {
+                    showStatus('無法啟動音源，請檢查瀏覽器權限或操作。');
+                }
+            }
+        }
+
+        ui.btnMicSource.addEventListener('click', () => startLiveAudio('mic'));
+        ui.btnSystemSource.addEventListener('click', () => startLiveAudio('system'));
 
         window.addEventListener('keydown', (e) => {
             if (document.activeElement === ui.lyricsInput) return;
