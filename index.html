@@ -1761,13 +1761,26 @@
                     else { trebleSum += value; trebleCount++; }
                 }
                 
-                bass = bassCount > 0 ? (bassSum / bassCount) / 255 : 0; mid = midCount > 0 ? (midSum / midCount) / 255 : 0;
-                treble = trebleCount > 0 ? (trebleSum / trebleCount) / 255 : 0; volume = (volumeSum / length) / 255;
+                // 【優化1：動態區間與指數放大 (Threshold & Exponential)】
+                // 砍掉 40 以下的底噪，將剩餘區間拉伸，並做 2 次方放大，創造爆發力
+                const processAudio = (val) => Math.pow(Math.max(0, (val * 255 - 40) / 215), 2.0);
+
+                bass = bassCount > 0 ? processAudio((bassSum / bassCount) / 255) : 0; 
+                mid = midCount > 0 ? processAudio((midSum / midCount) / 255) : 0;
+                treble = trebleCount > 0 ? processAudio((trebleSum / trebleCount) / 255) : 0; 
+                volume = processAudio((volumeSum / length) / 255);
             }
 
             if (state.sBass === undefined) { state.sBass = 0; state.sMid = 0; state.sTreble = 0; state.sVol = 0; }
-            state.sBass += (bass - state.sBass) * 0.2; state.sMid += (mid - state.sMid) * 0.2;
-            state.sTreble += (treble - state.sTreble) * 0.2; state.sVol += (volume - state.sVol) * 0.2;
+            
+            // 【優化2：起音快、釋音慢 (Attack & Release Envelope)】
+            // 瞬間變大(0.85)，緩慢縮小(0.08)，創造出Ｑ彈的呼吸感與打擊感
+            const attack = 0.85;  
+            const release = 0.08; 
+            state.sBass += (bass > state.sBass ? attack : release) * (bass - state.sBass);
+            state.sMid += (mid > state.sMid ? attack : release) * (mid - state.sMid);
+            state.sTreble += (treble > state.sTreble ? attack : release) * (treble - state.sTreble);
+            state.sVol += (volume > state.sVol ? attack : release) * (volume - state.sVol);
 
             if (state.isPlaying) {
                 state.bassHistory.push(bass); 
@@ -1775,20 +1788,27 @@
                 let localAvgBass = 0;
                 if (state.bassHistory.length > 0) localAvgBass = state.bassHistory.reduce((a, b) => a + b, 0) / state.bassHistory.length;
                 if (state.bassHitTimer > 0) state.bassHitTimer--;
-                const isBeat = bass > localAvgBass * 1.35 && bass > 0.3;
+                
+                // 降低觸發門檻，讓節拍更敏感
+                const isBeat = bass > localAvgBass * 1.2 && bass > 0.15;
 
                 if (isBeat) {
-                    if (bass > 0.45 && state.cameraShake < 1) {
-                        state.flashIntensity = bass * 0.5; state.cameraShake = bass * 1.5; bloomPass.strength = 1.2 + bass * 1.5; state.targetFov = 70; 
+                    // 【優化3：視覺打擊感強化】大鼓重拍時觸發色偏震動、強光與視角縮放
+                    if (bass > 0.3 && state.cameraShake < 1) {
+                        state.flashIntensity = bass * 1.0; 
+                        state.cameraShake = bass * 2.5; 
+                        bloomPass.strength = 1.2 + bass * 3.5; 
+                        rgbShiftPass.uniforms['amount'].value = bass * 0.015; // 色偏故障感
+                        state.targetFov = 72; 
                     }
 
-                    if (state.isAutoMode && state.bassHitTimer === 0 && bass > 0.6) {
+                    if (state.isAutoMode && state.bassHitTimer === 0 && bass > 0.5) {
                         state.bassHitTimer = 120; 
                         let nextScene = state.currentScene;
                         while(nextScene === state.currentScene) nextScene = Math.floor(Math.random() * 16);
                         switchScene(nextScene);
-                        state.flashIntensity = 2.5; state.cameraShake = 5.0; bloomPass.strength = 3.5; 
-                        rgbShiftPass.uniforms['amount'].value = 0.08; rgbShiftPass.uniforms['angle'].value = Math.random() * Math.PI * 2; 
+                        state.flashIntensity = 2.5; state.cameraShake = 4.0; bloomPass.strength = 3.5; 
+                        rgbShiftPass.uniforms['amount'].value = 0.05; rgbShiftPass.uniforms['angle'].value = Math.random() * Math.PI * 2; 
                         state.targetFov = 45; state.cameraOrbitSpeed = (Math.random() > 0.5 ? 1 : -1) * (0.01 + Math.random() * 0.02);
                     }
                 }
@@ -1802,16 +1822,18 @@
 
             masterGroup.position.x += (dragControl.targetX - masterGroup.position.x) * 0.1; masterGroup.position.y += (dragControl.targetY - masterGroup.position.y) * 0.1;
 
+            // 【優化4：單一頻率圖形 2.5 次方強化】
+            const getExaggeratedVal = (rawVal) => state.isPlaying ? Math.pow(Math.max(0, (rawVal - 40) / 215), 2.5) : 0;
             const vBass = (state.sBass || 0) * s, hue = state.hueOffset % 1.0, invHue = (state.hueOffset + 0.5) % 1.0;
 
             switch (state.currentScene) {
                 case 0:
                     particlesMesh.rotation.y += (0.001 + ((state.sTreble||0) * 0.02)) * r; particlesMesh.rotation.x += 0.0005 * r;
-                    particlesMesh.scale.setScalar(1 + vBass * 0.8); particlesMaterial.color.setHSL(hue, 0.8, 0.6); particlesGeometry.setDrawRange(0, Math.floor(18000 * d));
+                    particlesMesh.scale.setScalar(1 + vBass * 1.8); particlesMaterial.color.setHSL(hue, 0.8, 0.6); particlesGeometry.setDrawRange(0, Math.floor(18000 * d));
                     break;
                 case 1:
                     icosahedronMesh.rotation.x += 0.01 * r; icosahedronMesh.rotation.y += 0.01 * r;
-                    icosahedronMesh.scale.lerp(new THREE.Vector3(1 + vBass * 2, 1 + vBass * 2, 1 + vBass * 2).multiplyScalar(s), 0.1);
+                    icosahedronMesh.scale.lerp(new THREE.Vector3(1 + vBass * 3, 1 + vBass * 3, 1 + vBass * 3).multiplyScalar(s), 0.2);
                     icosahedronMaterial.emissive.setHSL(hue, 1.0, Math.min(1, vBass * 0.8)); icosahedronMaterial.color.setHSL(invHue, 0.8, 0.5);
                     break;
                 case 2:
@@ -1822,8 +1844,8 @@
                         ring.position.z += ringZSpeed; if(ring.position.z > 10) ring.position.z = -currentRingsCount * 10;
                         ring.material.opacity = Math.min(1, (ring.position.z + (currentRingsCount * 10)) / 100);
                         ring.material.color.setHSL(((hue + (index*0.02)) % 1.0), 1.0, 0.4 + (vBass*0.4));
-                        const dataVal = state.dataArray[index % 256] * 0.003921569; 
-                        const targetScale = (1 + (state.isPlaying ? dataVal : 0) * 0.8) * s;
+                        const dataVal = getExaggeratedVal(state.dataArray[index % 256]); 
+                        const targetScale = (1 + dataVal * 1.8) * s;
                         ring.scale.setScalar(ring.scale.x + (targetScale - ring.scale.x) * 0.2);
                     });
                     break;
@@ -1832,10 +1854,10 @@
                     const maxBars = 192 * d;
                     spectrumBars.forEach((bar, i) => {
                         bar.visible = i < maxBars; if(!bar.visible) return;
-                        const dataVal = state.dataArray[(i*2) % 256] * 0.003921569;
-                        const targetScaleY = (1 + (state.isPlaying ? dataVal : 0) * 15) * s;
+                        const dataVal = getExaggeratedVal(state.dataArray[(i*2) % 256]);
+                        const targetScaleY = (0.2 + dataVal * 35) * s;
                         bar.scale.y += (targetScaleY - bar.scale.y) * 0.25;
-                        bar.material.color.setHSL((hue + i*0.015625) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 4.0;
+                        bar.material.color.setHSL((hue + i*0.015625) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = dataVal * 8.0;
                     });
                     break;
                 case 4:
@@ -1843,7 +1865,7 @@
                     terrainMesh.scale.setScalar(s); const positions = terrainGeo.attributes.position.array;
                     for(let i=0, len=positions.length; i<len; i+=3) {
                         const index = ((i * 0.333333) | 0) % 256; 
-                        const targetZ = ((state.isPlaying ? state.dataArray[index] : 0) * 0.003921569) * 12 * s; 
+                        const targetZ = getExaggeratedVal(state.dataArray[index]) * 40 * s; 
                         positions[i+2] += (targetZ - positions[i+2]) * 0.3; 
                     }
                     terrainGeo.attributes.position.needsUpdate = true; terrainMat.color.setHSL(hue, 1.0, 0.5); terrainMat.emissive.setHSL(invHue, 1.0, vBass * 0.6);
@@ -1854,8 +1876,8 @@
                     const maxSpikes = 120 * d;
                     spikes.forEach((spike, i) => {
                         spike.visible = i < maxSpikes; if(!spike.visible) return;
-                        const dataVal = state.dataArray[(i*4) % 256] * 0.003921569;
-                        spike.scale.y += ((1 + (state.isPlaying ? dataVal : 0) * 2) - spike.scale.y) * 0.3;
+                        const dataVal = getExaggeratedVal(state.dataArray[(i*4) % 256]);
+                        spike.scale.y += ((1 + dataVal * 4) - spike.scale.y) * 0.4;
                         spike.material.color.setHSL((hue + i*0.025) % 1.0, 1.0, 0.5); 
                     });
                     break;
@@ -1864,10 +1886,10 @@
                     const maxSpheres = 360 * d;
                     helixSpheres.forEach((sphere, i) => {
                         sphere.visible = i < maxSpheres; if(!sphere.visible) return;
-                        const dataVal = state.dataArray[i % 256] * 0.003921569;
-                        const targetS = (1 + (state.isPlaying ? dataVal : 0) * 2.5) * s;
+                        const dataVal = getExaggeratedVal(state.dataArray[i % 256]);
+                        const targetS = (1 + dataVal * 4.0) * s;
                         sphere.scale.setScalar(sphere.scale.x + (targetS - sphere.scale.x) * 0.2);
-                        sphere.material.color.setHSL(hue, 1.0, 0.4 + (state.isPlaying ? dataVal : 0)*0.4);
+                        sphere.material.color.setHSL(hue, 1.0, 0.4 + dataVal*0.4);
                     });
                     break;
                 case 7:
@@ -1875,11 +1897,11 @@
                     const maxCubes = 343 * d;
                     matrixCubes.forEach((cube, i) => {
                         cube.visible = i < maxCubes; if(!cube.visible) return;
-                        const dataVal = state.dataArray[i % 256] * 0.003921569;
-                        const targetS = (0.5 + (state.isPlaying ? dataVal : 0) * 2) * s;
+                        const dataVal = getExaggeratedVal(state.dataArray[i % 256]);
+                        const targetS = (0.2 + dataVal * 3.5) * s;
                         cube.scale.setScalar(cube.scale.x + (targetS - cube.scale.x) * 0.2);
-                        const rotAdd = (state.isPlaying ? dataVal : 0) * 0.1 * r; cube.rotation.x += rotAdd; cube.rotation.y += rotAdd;
-                        cube.material.color.setHSL((hue + (state.isPlaying ? dataVal : 0)) % 1.0, 1.0, 0.5);
+                        const rotAdd = dataVal * 0.2 * r; cube.rotation.x += rotAdd; cube.rotation.y += rotAdd;
+                        cube.material.color.setHSL((hue + dataVal) % 1.0, 1.0, 0.5);
                     });
                     break;
                 case 8:
@@ -1889,7 +1911,7 @@
                         const layer = i % 5;
                         ring.rotation.x += (0.01 * (layer+1) + ((state.sTreble||0) * 0.05)) * r;
                         ring.rotation.y += (0.015 * (5-layer) + ((state.sMid||0) * 0.05)) * r;
-                        ring.scale.setScalar((1 + ((state.sBass||0) * 0.2 * (layer+1))) * s);
+                        ring.scale.setScalar((1 + ((state.sBass||0) * 0.5 * (layer+1))) * s);
                         ring.material.color.setHSL((hue + i*0.2) % 1.0, 1.0, 0.5); 
                     });
                     break;
@@ -1898,7 +1920,7 @@
                     const currentScale = (1 + ((state.sBass||0) * 3)) * s; const maxLines = Math.floor(600 * d); starburstGeo.setDrawRange(0, maxLines * 2);
                     const sbPos = starburstGeo.attributes.position.array;
                     for(let i=0; i<maxLines; i++) {
-                        const dataVal = state.dataArray[i % 256] * 0.003921569; const baseR = 20 * currentScale * ((state.isPlaying ? dataVal : 0) + 0.2);
+                        const dataVal = getExaggeratedVal(state.dataArray[i % 256]); const baseR = 20 * currentScale * (dataVal + 0.2);
                         const idx = i * 6; const theta = Math.atan2(sbPos[idx+4], sbPos[idx+3]); const phi = Math.acos(sbPos[idx+5] / Math.sqrt(sbPos[idx+3]**2 + sbPos[idx+4]**2 + sbPos[idx+5]**2) || 1);
                         sbPos[idx+3] = baseR * Math.sin(phi) * Math.cos(theta); sbPos[idx+4] = baseR * Math.sin(phi) * Math.sin(theta); sbPos[idx+5] = baseR * Math.cos(phi);
                     }
@@ -1906,21 +1928,21 @@
                     break;
                 case 10:
                     knotMesh.rotation.x += (0.01 + ((state.sMid||0) * 0.05)) * r; knotMesh.rotation.y += (0.02 + ((state.sTreble||0) * 0.05)) * r;
-                    knotMesh.scale.setScalar((1 + (state.sBass||0) * 1.5) * s);
+                    knotMesh.scale.setScalar((1 + (state.sBass||0) * 2.0) * s);
                     knotMesh.material.color.setHSL(invHue, 1.0, 0.5); knotMesh.material.emissive.setHSL(hue, 1.0, Math.min(1, vBass * 0.7));
                     break;
                 case 11:
-                    groups[11].rotation.y += (0.05 + ((state.sVol||0) * 0.1)) * r; groups[11].position.y = Math.sin(timeSec * r) * 5 * vBass;
-                    vortexMesh.scale.setScalar((1 + (state.sBass||0) * 0.8) * s); vortexGeo.setDrawRange(0, Math.floor(9000 * d)); vortexMesh.material.color.setHSL(hue, 0.9, 0.6);
+                    groups[11].rotation.y += (0.05 + ((state.sVol||0) * 0.1)) * r; groups[11].position.y = Math.sin(timeSec * r) * 12 * vBass;
+                    vortexMesh.scale.setScalar((1 + (state.sBass||0) * 1.5) * s); vortexGeo.setDrawRange(0, Math.floor(9000 * d)); vortexMesh.material.color.setHSL(hue, 0.9, 0.6);
                     break;
                 case 12:
                     groups[12].rotation.y = Math.sin(timeSec * 0.5 * r) * 0.5; groups[12].rotation.x = Math.sin(timeSec * r) * 0.2;
                     const maxDiscs = 24 * d;
                     discs.forEach((disc, i) => {
                         disc.visible = i < maxDiscs; if(!disc.visible) return;
-                        const dataVal = state.dataArray[(i*8) % 256] * 0.003921569;
-                        disc.rotation.z += (0.01 + (state.isPlaying ? dataVal : 0)*0.1) * r; disc.position.y = ((i % 8) - 3.5) * (4 + bass * 5) * s;
-                        const targetS = (1 + (state.isPlaying ? dataVal : 0) * 0.5) * s; disc.scale.setScalar(disc.scale.x + (targetS - disc.scale.x) * 0.2);
+                        const dataVal = getExaggeratedVal(state.dataArray[(i*8) % 256]);
+                        disc.rotation.z += (0.01 + dataVal*0.1) * r; disc.position.y = ((i % 8) - 3.5) * (4 + bass * 8) * s;
+                        const targetS = (1 + dataVal * 1.2) * s; disc.scale.setScalar(disc.scale.x + (targetS - disc.scale.x) * 0.2);
                         disc.material.color.setHSL((hue + i*0.125) % 1.0, 1.0, 0.5); 
                     });
                     break;
@@ -1931,10 +1953,10 @@
                         ribbonObj.mesh.visible = idx < maxRibbons; if(!ribbonObj.mesh.visible) return;
                         const ribPos = ribbonObj.mesh.geometry.attributes.position.array;
                         for(let i=0; i<256; i++) {
-                            const dataVal = state.dataArray[(i * 2 + idx * 10) % 256] * 0.003921569; const angle = (i * 0.00390625) * pi2; 
-                            const targetR = (ribbonObj.baseRadius + (state.isPlaying ? dataVal : 0) * 15 * s) * s; const posIdx = i * 3;
+                            const dataVal = getExaggeratedVal(state.dataArray[(i * 2 + idx * 10) % 256]); const angle = (i * 0.00390625) * pi2; 
+                            const targetR = (ribbonObj.baseRadius + dataVal * 25 * s) * s; const posIdx = i * 3;
                             const currentR = Math.sqrt(ribPos[posIdx]**2 + ribPos[posIdx+2]**2); const nextR = currentR + (targetR - currentR) * 0.3;
-                            ribPos[posIdx] = Math.cos(angle) * nextR; ribPos[posIdx+1] += ((state.isPlaying ? dataVal : 0) * 15 * s * (idx % 2 === 0 ? 1 : -1) - ribPos[posIdx+1]) * 0.3; ribPos[posIdx+2] = Math.sin(angle) * nextR;
+                            ribPos[posIdx] = Math.cos(angle) * nextR; ribPos[posIdx+1] += (dataVal * 25 * s * (idx % 2 === 0 ? 1 : -1) - ribPos[posIdx+1]) * 0.4; ribPos[posIdx+2] = Math.sin(angle) * nextR;
                         }
                         ribbonObj.mesh.geometry.attributes.position.needsUpdate = true; ribbonObj.mesh.material.color.setHSL((hue + idx*0.1) % 1.0, 1.0, 0.6);
                     });
@@ -1943,23 +1965,23 @@
                     groups[14].rotation.y -= 0.01 * r; const maxEqBars = 128 * d; const pi2Eq = Math.PI * 2;
                     eqRingBars.forEach((bar, i) => {
                         bar.visible = i < maxEqBars; if(!bar.visible) return;
-                        const dataVal = state.dataArray[(i * 2) % 256] * 0.003921569;
-                        const targetY = Math.max(0.1, (state.isPlaying ? dataVal : 0) * 30 * s); bar.scale.y += (targetY - bar.scale.y) * 0.2;
+                        const dataVal = getExaggeratedVal(state.dataArray[(i * 2) % 256]);
+                        const targetY = Math.max(0.1, dataVal * 45 * s); bar.scale.y += (targetY - bar.scale.y) * 0.2;
                         bar.scale.x = s; bar.scale.z = s; bar.position.y = (bar.scale.y * 0.5) - 10 * s; 
                         const angle = (i * 0.0078125) * pi2Eq; bar.position.x = Math.cos(angle) * 25 * s; bar.position.z = Math.sin(angle) * 25 * s;
-                        bar.material.color.setHSL((hue + i*0.0078125) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 4.0;
+                        bar.material.color.setHSL((hue + i*0.0078125) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = dataVal * 4.0;
                     });
                     break;
                 case 15:
                     groups[15].rotation.x += 0.01 * r; groups[15].rotation.y += 0.015 * r;
-                    core.scale.setScalar((1 + vBass * 1.5) * s); core.material.color.setHSL(hue, 1.0, 0.8); const maxCrystals = 80 * d;
+                    core.scale.setScalar((1 + vBass * 2.0) * s); core.material.color.setHSL(hue, 1.0, 0.8); const maxCrystals = 80 * d;
                     crystals.forEach((crystal, i) => {
                         crystal.visible = i < maxCrystals; if(!crystal.visible) return;
-                        const dataVal = state.dataArray[(i*3) % 256] * 0.003921569;
-                        const targetY = (1 + (state.isPlaying ? dataVal : 0) * 4) * s; crystal.scale.y += (targetY - crystal.scale.y) * 0.2;
+                        const dataVal = getExaggeratedVal(state.dataArray[(i*3) % 256]);
+                        const targetY = (1 + dataVal * 6) * s; crystal.scale.y += (targetY - crystal.scale.y) * 0.2;
                         crystal.scale.x = s; crystal.scale.z = s;
-                        crystal.position.setFromSphericalCoords((8 + (state.isPlaying ? dataVal : 0) * 3) * s, crystal.userData.phi, crystal.userData.theta);
-                        crystal.material.color.setHSL((invHue + i*0.0125) % 1.0, 1.0, 0.5); crystal.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 5.0;
+                        crystal.position.setFromSphericalCoords((8 + dataVal * 4) * s, crystal.userData.phi, crystal.userData.theta);
+                        crystal.material.color.setHSL((invHue + i*0.0125) % 1.0, 1.0, 0.5); crystal.material.emissiveIntensity = dataVal * 5.0;
                     });
                     break;
             }
