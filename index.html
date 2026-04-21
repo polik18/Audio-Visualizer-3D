@@ -6,8 +6,9 @@
     <title>3D 音樂視覺化與 MP4 導出工具 (現場收音加強版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
-    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+    <!-- 【修正】改用更穩定的 jsdelivr CDN 載入 FFmpeg，解決 unpkg 容易連線中斷的問題 -->
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
     
     <!-- 引入 Three.js 後期處理特效腳本 -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
@@ -246,7 +247,6 @@
                 </div>
                 
                 <div id="instructions-container" class="glass-panel rounded-xl p-3 text-xs text-gray-300 w-full md:w-72 space-y-2 shadow-lg hidden sm:block">
-                    <!-- 移除了多餘的「閒置時全隱藏」Checkbox，讓介面更純淨 -->
                     <div class="flex justify-between items-center border-b border-white/20 pb-1 mb-1">
                         <span class="font-bold text-white text-[11px]">點擊項目，使用 <kbd class="bg-gray-800 px-1 rounded border border-gray-600 text-[10px]">↑↓←→</kbd> 調整</span>
                     </div>
@@ -421,6 +421,10 @@
     </div>
 
     <div id="loading-overlay" class="fixed inset-0 bg-black/80 z-[200] hidden flex-col items-center justify-center backdrop-blur-sm">
+        <!-- 【修正2】加入強制關閉按鈕，防止錄影錯誤時整個網頁卡死 -->
+        <button id="cancel-export-btn" class="absolute top-6 right-6 text-gray-400 hover:text-red-500 transition-colors bg-gray-800 hover:bg-gray-700 rounded-full p-2 shadow-lg z-50">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
         <svg class="animate-spin -ml-1 mr-3 h-12 w-12 text-purple-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -451,6 +455,7 @@
             dataArray: new Uint8Array(512), 
             isPlaying: false,
             isRecording: false,
+            recordMimeType: 'video/webm', // 紀錄實際的錄製格式
             currentScene: 0,
             bassHitTimer: 0,
             hueOffset: 0,
@@ -607,11 +612,9 @@
         let isUICollapsed = false;
         let idleTimer = null;
 
-        // 全域收折開關
         function setUICollapseState(collapse) {
             isUICollapsed = collapse;
             if (collapse) {
-                // Header 與 Footer 徹底飛出螢幕外
                 ui.mainHeader.classList.add('-translate-y-[150%]', 'opacity-0');
                 ui.footerContainer.classList.add('translate-y-40'); 
                 ui.mainToolbar.classList.add('opacity-0', 'scale-90', 'pointer-events-none');
@@ -620,7 +623,6 @@
                 ui.toggleUiBtn.classList.add('bg-purple-600/80', 'border-purple-400');
                 ui.toggleUiBtn.classList.remove('bg-gray-900/80', 'border-white/20');
             } else {
-                // 還原全域 UI
                 ui.mainHeader.classList.remove('-translate-y-[150%]', 'opacity-0');
                 ui.footerContainer.classList.remove('translate-y-40');
                 ui.mainToolbar.classList.remove('opacity-0', 'scale-90', 'pointer-events-none');
@@ -634,11 +636,9 @@
 
         ui.toggleUiBtn.addEventListener('click', () => setUICollapseState(!isUICollapsed));
 
-        // 智慧閒置喚醒 (Smart Idle UI)
         function wakeUI() {
-            if (isUICollapsed) return; // 若手動折疊了，就不受閒置邏輯影響
+            if (isUICollapsed) return; 
             
-            // 喚醒全域 UI (移除半透明)
             ui.mainHeader.classList.remove('opacity-30');
             ui.footerContainer.classList.remove('opacity-30');
             document.body.style.cursor = 'default';
@@ -647,7 +647,6 @@
 
             if (state.isPlaying) {
                 idleTimer = setTimeout(() => {
-                    // 閒置時全域介面一起半透明
                     ui.mainHeader.classList.add('opacity-30');
                     ui.footerContainer.classList.add('opacity-30');
                 }, 2500); 
@@ -857,8 +856,8 @@
 
         ui.metroSliderBpm.addEventListener('input', e => syncMetroBpm(e.target.value));
         ui.metroInputBpm.addEventListener('change', e => syncMetroBpm(e.target.value));
-        ui.metroBtnMinus.addEventListener('click', () => syncMetroBpm(state.metroBpm - 1));
-        ui.metroBtnPlus.addEventListener('click', () => syncMetroBpm(state.metroBpm + 1));
+        if (ui.metroBtnMinus) ui.metroBtnMinus.addEventListener('click', () => syncMetroBpm(state.metroBpm - 1));
+        if (ui.metroBtnPlus) ui.metroBtnPlus.addEventListener('click', () => syncMetroBpm(state.metroBpm + 1));
         ui.metroSelectBeat.addEventListener('change', e => { state.metroBeatsPerBar = parseInt(e.target.value); renderMetroLeds(); });
         ui.metroSliderVol.addEventListener('input', e => { state.metroVolume = parseFloat(e.target.value); });
 
@@ -944,7 +943,7 @@
         
         chkAutoScene.addEventListener('change', (e) => { 
             state.isAutoMode = e.target.checked; 
-            showStatus(state.isAutoMode ? '自動模式開啟' : '手動模式開啟'); 
+            showStatus(state.isAutoMode ? '自動模式開啟' : '手 মোক模式開啟'); 
         });
 
         document.getElementById('btn-prev-scene').addEventListener('click', () => {
@@ -982,21 +981,42 @@
         const scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x000000, 0.002);
 
+        // 獨立的歌詞圖層 (免疫 Bloom 泛光與色差干擾)
+        const lyricsScene = new THREE.Scene();
+        
+        // 獨立的底圖/影片圖層 (免疫 Bloom 泛光干擾，保持原始亮度)
+        const bgScene = new THREE.Scene();
+        bgScene.background = new THREE.Color(0x000000);
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 50;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        // 允許疊加渲染，保護歌詞不被背景吃掉
+        renderer.autoClear = false;
         container.appendChild(renderer.domElement);
 
         const composer = new THREE.EffectComposer(renderer);
         const renderPass = new THREE.RenderPass(scene, camera);
+        
+        // 【修復殘影問題】恢復清除功能，並設定為透明的黑色背景，避免拖影無限堆疊，同時保留底圖的能見度
+        renderPass.clear = true; 
+        renderPass.clearColor = new THREE.Color(0x000000);
+        renderPass.clearAlpha = 0;
+        
         composer.addPass(renderPass);
-        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.5, 0.2);
+        
+        // 提高泛光閾值 (Threshold)，防止底圖或普通亮度的物件過度發光 (從 0.2 改為 0.85)
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.5, 0.85);
         composer.addPass(bloomPass);
+        
         const rgbShiftPass = new THREE.ShaderPass(THREE.RGBShiftShader);
         rgbShiftPass.uniforms['amount'].value = 0.0; 
+        // 讓特效層以「加法混色 (AdditiveBlending)」疊加到底圖上，避免黑背景遮擋底圖，也解決 Bloom 造成的 Alpha 黑邊問題
+        rgbShiftPass.material.transparent = true;
+        rgbShiftPass.material.blending = THREE.AdditiveBlending;
         composer.addPass(rgbShiftPass);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
@@ -1017,10 +1037,12 @@
         const textMaterial = new THREE.SpriteMaterial({ map: textTexture, transparent: true, depthTest: false });
         const textSprite = new THREE.Sprite(textMaterial);
         textSprite.renderOrder = 999; textSprite.scale.set(100, 50, 1); textSprite.position.set(0, 0, 10); 
-        scene.add(textSprite);
+        
+        // 將歌詞加入獨立圖層，而非主要 Scene
+        lyricsScene.add(textSprite);
 
         // ==========================================
-        // 歌詞渲染邏輯
+        // 歌詞渲染邏輯 (防光害描邊處理)
         // ==========================================
         function parseLyrics(text) {
             state.isPureTextDrawn = false;
@@ -1086,7 +1108,9 @@
             }
             parsedLines.forEach(line => { line.offsetY += (line.size * lineHeightFactor) / 2; });
 
-            const visibleHeight = 1024, padding = visibleHeight * 0.8, requiredHeight = currentOffsetY + padding * 2;
+            // 修正排版：頂部減少空白讓字從中間開始，底部保留大空白確保最後一行能滾動消失
+            const visibleHeight = 1024, topPadding = visibleHeight * 0.4, bottomPadding = visibleHeight * 0.8;
+            const requiredHeight = currentOffsetY + topPadding + bottomPadding;
             let actualHeight = 1024, contentScale = 1;
 
             if (state.isMicMode) {
@@ -1106,7 +1130,7 @@
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
             textCtx.textAlign = "center"; textCtx.textBaseline = "middle"; 
 
-            let baseStartY = state.isMicMode ? (actualHeight - (currentOffsetY * contentScale)) / 2 : padding * contentScale;
+            let baseStartY = state.isMicMode ? (actualHeight - (currentOffsetY * contentScale)) / 2 : topPadding * contentScale;
 
             for (const line of parsedLines) {
                 const actualOffsetY = line.offsetY * contentScale;
@@ -1114,6 +1138,7 @@
                 const scaledSize = line.size * contentScale;
                 textCtx.font = `bold ${scaledSize}px 'Segoe UI', sans-serif`;
                 
+                // 抗光害黑色描邊
                 textCtx.lineWidth = scaledSize * 0.08;
                 textCtx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
                 textCtx.strokeText(line.text, textCanvas.width / 2, y);
@@ -1166,6 +1191,7 @@
                     let opacity = isActive ? 1 : Math.max(0.1, 0.5 - dist * 0.1);
 
                     textCtx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+                    // 抗光害黑色描邊
                     textCtx.lineWidth = fontSize * 0.08;
                     textCtx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.8})`;
                     textCtx.strokeText(line.text, textCanvas.width / 2, y);
@@ -1193,6 +1219,7 @@
             masterGroup.add(group); groups.push(group);
         }
         
+        // 調整所有場景物件的 Emissive 強度，配合提高後的 Bloom Threshold
         // [0] 深空星塵 
         const particlesGeometry = new THREE.BufferGeometry();
         const posArray = new Float32Array(18000 * 3);
@@ -1203,7 +1230,7 @@
         groups[0].add(particlesMesh); groups[0].visible = true;
 
         // [1] 幾何脈動
-        const icosahedronMaterial = new THREE.MeshStandardMaterial({ color: 0xaa00ff, wireframe: true, emissive: 0x330055, emissiveIntensity: 0.5 });
+        const icosahedronMaterial = new THREE.MeshStandardMaterial({ color: 0xaa00ff, wireframe: true, emissive: 0x330055, emissiveIntensity: 2.0 });
         const icosahedronMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(15, 2), icosahedronMaterial);
         groups[1].add(icosahedronMesh);
 
@@ -1217,7 +1244,7 @@
         // [3] 頻譜光環
         const spectrumBars = []; const barGeo = new THREE.BoxGeometry(1, 1, 1); 
         for(let i = 0; i < 192; i++) {
-            const bar = new THREE.Mesh(barGeo, new THREE.MeshStandardMaterial({color: 0x00ffcc, emissive: 0x004433}));
+            const bar = new THREE.Mesh(barGeo, new THREE.MeshStandardMaterial({color: 0x00ffcc, emissive: 0x004433, emissiveIntensity: 2.0}));
             const angle = ((i % 64) / 64) * Math.PI * 2; const radius = 20 + Math.floor(i / 64) * 2;
             bar.position.set(Math.cos(angle)*radius, Math.sin(angle)*radius, 0); bar.rotation.z = angle;
             spectrumBars.push(bar); groups[3].add(bar);
@@ -1242,7 +1269,7 @@
         // [6] 霓虹螺旋
         const helixSpheres = []; const helixGeo = new THREE.SphereGeometry(0.8, 8, 8); 
         for(let i = 0; i < 360; i++) {
-            const mat = new THREE.MeshStandardMaterial({color: 0x00ff00, emissive: 0x005500});
+            const mat = new THREE.MeshStandardMaterial({color: 0x00ff00, emissive: 0x005500, emissiveIntensity: 1.5});
             const s1 = new THREE.Mesh(helixGeo, mat); const s2 = new THREE.Mesh(helixGeo, mat);
             const y = ((i % 120) - 60) * 0.8; const angle = (i % 120) * 0.2; const radius = 8 + Math.floor(i/120)*1.5;
             s1.position.set(Math.cos(angle)*radius, y, Math.sin(angle)*radius); s2.position.set(Math.cos(angle+Math.PI)*radius, y, Math.sin(angle+Math.PI)*radius);
@@ -1264,7 +1291,7 @@
         const gyroRings = [];
         for(let i = 0; i < 15; i++) {
             const idx = i % 5; const layer = Math.floor(i / 5);
-            const ring = new THREE.Mesh(new THREE.TorusGeometry(8 + idx*4 + layer*2, 0.4, 16, 64), new THREE.MeshStandardMaterial({color: 0xffffff, emissive: 0x333333, wireframe: idx%2===0}));
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(8 + idx*4 + layer*2, 0.4, 16, 64), new THREE.MeshStandardMaterial({color: 0xffffff, emissive: 0x333333, emissiveIntensity: 1.5, wireframe: idx%2===0}));
             gyroRings.push(ring); groups[8].add(ring);
         }
 
@@ -1283,7 +1310,7 @@
         groups[9].add(starburstLines);
 
         // [10] 扭曲空間
-        const knotMesh = new THREE.Mesh(new THREE.TorusKnotGeometry(12, 3, 150, 20), new THREE.MeshStandardMaterial({color: 0xff0055, emissive: 0x330011, wireframe: true}));
+        const knotMesh = new THREE.Mesh(new THREE.TorusKnotGeometry(12, 3, 150, 20), new THREE.MeshStandardMaterial({color: 0xff0055, emissive: 0x330011, emissiveIntensity: 2.0, wireframe: true}));
         groups[10].add(knotMesh);
 
         // [11] 粒子漩渦 
@@ -1322,7 +1349,7 @@
         // [14] 浮動音柱環 
         const eqRingBars = []; const eqBarGeo = new THREE.BoxGeometry(0.8, 1, 0.8); 
         for(let i=0; i<128; i++) {
-            const bar = new THREE.Mesh(eqBarGeo, new THREE.MeshStandardMaterial({color: 0x00ffff, emissive: 0x002222}));
+            const bar = new THREE.Mesh(eqBarGeo, new THREE.MeshStandardMaterial({color: 0x00ffff, emissive: 0x002222, emissiveIntensity: 2.0}));
             const angle = (i / 128) * Math.PI * 2;
             bar.position.set(Math.cos(angle)*25, 0, Math.sin(angle)*25); bar.lookAt(0, 0, 0);
             eqRingBars.push(bar); groups[14].add(bar);
@@ -1420,7 +1447,7 @@
 
         function handleBgFile(file) {
             if (!file) return;
-            if (scene.background && scene.background.isTexture) scene.background.dispose();
+            if (bgScene.background && bgScene.background.isTexture) bgScene.background.dispose();
             if (state.bgVideoElement) {
                 state.bgVideoElement.pause(); state.bgVideoElement.removeAttribute('src'); state.bgVideoElement.load(); state.bgVideoElement = null;
             }
@@ -1430,10 +1457,10 @@
             if (file.type.startsWith('video/')) {
                 const video = document.createElement('video');
                 video.src = url; video.loop = true; video.muted = true; video.autoplay = true; video.playsInline = true; video.crossOrigin = 'anonymous'; video.play();
-                const texture = new THREE.VideoTexture(video); texture.colorSpace = THREE.SRGBColorSpace; scene.background = texture; state.bgVideoElement = video;
+                const texture = new THREE.VideoTexture(video); texture.encoding = THREE.sRGBEncoding; bgScene.background = texture; state.bgVideoElement = video;
                 ui.removeBgBtn.classList.remove('hidden'); showStatus('動態影片背景已套用');
             } else if (file.type.startsWith('image/')) {
-                textureLoader.load(url, (texture) => { texture.colorSpace = THREE.SRGBColorSpace; scene.background = texture; ui.removeBgBtn.classList.remove('hidden'); showStatus('靜態底圖已更新'); });
+                textureLoader.load(url, (texture) => { texture.encoding = THREE.sRGBEncoding; bgScene.background = texture; ui.removeBgBtn.classList.remove('hidden'); showStatus('靜態底圖已更新'); });
             }
         }
 
@@ -1453,8 +1480,8 @@
 
         ui.removeBgBtn.addEventListener('click', (e) => {
             e.preventDefault(); 
-            if (scene.background && scene.background.isTexture) scene.background.dispose();
-            scene.background = null; ui.bgUpload.value = ''; ui.removeBgBtn.classList.add('hidden'); 
+            if (bgScene.background && bgScene.background.isTexture) bgScene.background.dispose();
+            bgScene.background = new THREE.Color(0x000000); ui.bgUpload.value = ''; ui.removeBgBtn.classList.add('hidden'); 
             if (state.bgVideoElement) { state.bgVideoElement.pause(); state.bgVideoElement.removeAttribute('src'); state.bgVideoElement.load(); state.bgVideoElement = null; }
             showStatus('背景已移除');
         });
@@ -1493,14 +1520,30 @@
                 if (state.audioContext.state === 'suspended') await state.audioContext.resume();
 
                 state.source = state.audioContext.createMediaStreamSource(stream);
-                state.analyser = state.audioContext.createAnalyser();
-                state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.85; 
-                state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
                 
-                state.tunerAnalyser = state.audioContext.createAnalyser();
-                state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize);
+                // 確保分析器存在
+                if (!state.analyser) {
+                    state.analyser = state.audioContext.createAnalyser();
+                    state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.85; 
+                    state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
+                    if (state.audioContext.createMediaStreamDestination) {
+                        state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
+                    }
+                }
+                if (!state.tunerAnalyser) {
+                    state.tunerAnalyser = state.audioContext.createAnalyser();
+                    state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize);
+                }
+
+                // 清除舊連線，確保沒有 Feedback (無限回音)
+                state.analyser.disconnect();
+                state.tunerAnalyser.disconnect();
+
+                state.source.connect(state.analyser); 
+                state.source.connect(state.tunerAnalyser);
                 
-                state.source.connect(state.analyser); state.source.connect(state.tunerAnalyser);
+                // 【修正3】現場收音模式下，絕不連線至喇叭 (audioContext.destination)！直接將 source 連線至錄影目的地
+                if(state.mediaStreamDestination) state.source.connect(state.mediaStreamDestination);
                 
                 state.isMicMode = true; state.isPlaying = true;
                 
@@ -1525,25 +1568,42 @@
         ui.btnMicSource.addEventListener('click', () => startLiveAudio('mic'));
         ui.btnSystemSource.addEventListener('click', () => startLiveAudio('system'));
 
+        // [重大修復] 重構音訊路由，確保 MP3 永遠有聲音
         function playAudio(offset = 0) {
             if (!state.audioBuffer && !state.isMicMode) return showStatus('請先載入 MP3 音訊');
             if (state.isMicMode) stopAudio(); 
             
             if (state.source) { state.source.onended = null; state.source.stop(); state.source.disconnect(); }
             
-            state.source = state.audioContext.createBufferSource(); state.source.buffer = state.audioBuffer;
+            state.source = state.audioContext.createBufferSource(); 
+            state.source.buffer = state.audioBuffer;
             
+            // 確保分析器與錄影端點存在
             if (!state.analyser) {
-                state.analyser = state.audioContext.createAnalyser(); state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.85; 
+                state.analyser = state.audioContext.createAnalyser(); 
+                state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.85; 
                 state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
-                state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
-                state.analyser.connect(state.audioContext.destination); state.analyser.connect(state.mediaStreamDestination);
+                if (state.audioContext.createMediaStreamDestination) {
+                    state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
+                }
             }
             if (!state.tunerAnalyser) {
-                state.tunerAnalyser = state.audioContext.createAnalyser(); state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize);
+                state.tunerAnalyser = state.audioContext.createAnalyser(); 
+                state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize);
             }
 
-            state.source.connect(state.analyser); state.source.connect(state.tunerAnalyser);
+            // 清除所有的舊連線，確保乾淨路由
+            state.analyser.disconnect();
+            state.tunerAnalyser.disconnect();
+
+            // 建立 MP3 專用連線 (音軌 -> 分析器 -> 喇叭與錄影機)
+            state.source.connect(state.analyser); 
+            state.source.connect(state.tunerAnalyser);
+            
+            // 【修正4】直接將 source 音軌連接到喇叭，不透過 analyser 轉接，確保重新播放時絕對有聲音
+            state.source.connect(state.audioContext.destination); 
+            if (state.mediaStreamDestination) state.source.connect(state.mediaStreamDestination);
+            
             state.audioDuration = state.audioBuffer.duration;
             state.audioStartTime = state.audioContext.currentTime - offset;
 
@@ -1583,6 +1643,10 @@
         });
 
         ui.playBtn.addEventListener('click', async () => {
+            // 【修正5】點擊播放時確保 AudioContext 被喚醒，解決部分瀏覽器重整後沒聲音的問題
+            if (state.audioContext && state.audioContext.state === 'suspended') {
+                await state.audioContext.resume();
+            }
             if (!state.source && !state.isMicMode) {
                 if(state.metroIsPlaying) return showStatus('目前僅運作節拍器模式'); playAudio(0);
             } else {
@@ -1619,7 +1683,7 @@
         }
 
         window.addEventListener('keydown', (e) => {
-            if (document.activeElement === ui.lyricsInput) return;
+            if (document.activeElement === ui.lyricsInput || document.activeElement.tagName === 'INPUT') return;
 
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 e.preventDefault();
@@ -1771,7 +1835,7 @@
                         const dataVal = state.dataArray[(i*2) % 256] * 0.003921569;
                         const targetScaleY = (1 + (state.isPlaying ? dataVal : 0) * 15) * s;
                         bar.scale.y += (targetScaleY - bar.scale.y) * 0.25;
-                        bar.material.color.setHSL((hue + i*0.015625) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 2;
+                        bar.material.color.setHSL((hue + i*0.015625) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 4.0;
                     });
                     break;
                 case 4:
@@ -1783,6 +1847,7 @@
                         positions[i+2] += (targetZ - positions[i+2]) * 0.3; 
                     }
                     terrainGeo.attributes.position.needsUpdate = true; terrainMat.color.setHSL(hue, 1.0, 0.5); terrainMat.emissive.setHSL(invHue, 1.0, vBass * 0.6);
+                    terrainMat.emissiveIntensity = 1.5;
                     break;
                 case 5:
                     groups[5].rotation.x += 0.01 * r; groups[5].rotation.y += 0.02 * r; groups[5].scale.setScalar((1 + bass * 1.5) * s);
@@ -1882,7 +1947,7 @@
                         const targetY = Math.max(0.1, (state.isPlaying ? dataVal : 0) * 30 * s); bar.scale.y += (targetY - bar.scale.y) * 0.2;
                         bar.scale.x = s; bar.scale.z = s; bar.position.y = (bar.scale.y * 0.5) - 10 * s; 
                         const angle = (i * 0.0078125) * pi2Eq; bar.position.x = Math.cos(angle) * 25 * s; bar.position.z = Math.sin(angle) * 25 * s;
-                        bar.material.color.setHSL((hue + i*0.0078125) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 2;
+                        bar.material.color.setHSL((hue + i*0.0078125) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 4.0;
                     });
                     break;
                 case 15:
@@ -1894,7 +1959,7 @@
                         const targetY = (1 + (state.isPlaying ? dataVal : 0) * 4) * s; crystal.scale.y += (targetY - crystal.scale.y) * 0.2;
                         crystal.scale.x = s; crystal.scale.z = s;
                         crystal.position.setFromSphericalCoords((8 + (state.isPlaying ? dataVal : 0) * 3) * s, crystal.userData.phi, crystal.userData.theta);
-                        crystal.material.color.setHSL((invHue + i*0.0125) % 1.0, 1.0, 0.5); crystal.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 2.5;
+                        crystal.material.color.setHSL((invHue + i*0.0125) % 1.0, 1.0, 0.5); crystal.material.emissiveIntensity = (state.isPlaying ? dataVal : 0) * 5.0;
                     });
                     break;
             }
@@ -1943,7 +2008,19 @@
                 }
             }
 
-            composer.render();
+            // [重大修復] 分離圖層，確保底圖不被渲染特效干擾！
+            renderer.clear();
+            
+            // 1. 畫純淨的底圖/影片 (獨立於 Bloom 之外，保持原始亮度不變色)
+            renderer.render(bgScene, camera);
+            renderer.clearDepth();
+
+            // 2. 畫 3D 場景特效 (透過 AdditiveBlending 疊加到底圖上，保留光暈)
+            composer.render(); 
+            
+            // 3. 畫純文字歌詞 (保持最上層清晰)
+            renderer.clearDepth(); 
+            renderer.render(lyricsScene, camera); 
         }
         animate();
 
@@ -1965,8 +2042,18 @@
                 const audioTracks = state.mediaStreamDestination.stream.getTracks(); if (audioTracks.length > 0) { tracks.push(...audioTracks); state.hasAudioTrack = true; }
             }
 
-            const combinedStream = new MediaStream(tracks); const options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 };
-            try { mediaRecorder = new MediaRecorder(combinedStream, options); } catch (e) { mediaRecorder = new MediaRecorder(combinedStream); }
+            const combinedStream = new MediaStream(tracks); 
+            const options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 };
+            
+            // 【修復】動態抓取實際錄製格式 (解決 Safari/macOS 預設錄成 MP4 卻被當成 WebM 的嚴重錯誤)
+            try { 
+                mediaRecorder = new MediaRecorder(combinedStream, options); 
+            } catch (e) { 
+                mediaRecorder = new MediaRecorder(combinedStream); 
+            }
+            
+            state.recordMimeType = mediaRecorder.mimeType || 'video/webm';
+
             mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
             mediaRecorder.onstop = async () => { await processVideo(); };
 
@@ -1995,50 +2082,111 @@
 
         ui.recordBtn.addEventListener('click', () => { state.isRecording ? stopRecording() : startRecording(); });
 
+        // 強制取消錄影處理的監聽器
+        document.getElementById('cancel-export-btn').addEventListener('click', () => {
+            ui.loadingOverlay.classList.add('hidden'); 
+            ui.loadingOverlay.style.display = 'none';
+            showStatus('已強制取消影片處理程序，恢復系統操作。');
+        });
+
         async function processVideo() {
-            const quality = document.getElementById('export-quality').value; const ratio = document.getElementById('export-ratio').value;
-            const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
+            // 安全機制：如果錄影過短或中斷導致沒錄到資料，直接擋下，避免 FFmpeg 卡死
+            if (!recordedChunks || recordedChunks.length === 0) {
+                showStatus('錄製失敗：沒有擷取到足夠的畫面資料。');
+                return;
+            }
             
-            if (quality === 'webm') { downloadBlob(webmBlob, 'visualizer_raw.webm'); showStatus('⚡ 極速 WebM 原檔導出完成！(注意：WebM 模式將維持原始螢幕比例)'); return; }
+            const quality = document.getElementById('export-quality').value; 
+            const ratio = document.getElementById('export-ratio').value;
+            
+            // 【修復】使用實際錄製到的格式，而非強硬指定 WebM
+            const mimeType = state.recordMimeType || 'video/webm';
+            const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+            const inputName = `input.${ext}`;
+            const videoBlob = new Blob(recordedChunks, { type: mimeType });
+            
+            if (quality === 'webm') { 
+                downloadBlob(videoBlob, `visualizer_raw.${ext}`); 
+                showStatus(`⚡ 極速原檔 (${ext}) 導出完成！`); 
+                return; 
+            }
 
             ui.loadingOverlay.classList.remove('hidden'); ui.loadingOverlay.style.display = 'flex';
             ui.progressContainer.classList.add('hidden'); ui.progressBar.style.width = '0%'; ui.progressText.textContent = '0%';
             
             try {
                 if (!ffmpeg) {
-                    ffmpeg = new window.FFmpegWASM.FFmpeg(); ffmpeg.on('log', ({ message }) => console.log(message));
-                    ffmpeg.on('progress', ({ progress }) => { const percent = Math.min(100, Math.max(0, Math.round(progress * 100))); ui.progressBar.style.width = `${percent}%`; ui.progressText.textContent = `${percent}%`; });
-                }
-                if (!ffmpeg.loaded) {
-                    ui.loadingText.textContent = '正在載入轉碼引擎 (需時較長，請稍候)...';
-                    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'; const ffmpegBaseURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd'; const toBlobURL = window.FFmpegUtil.toBlobURL;
-                    await ffmpeg.load({
-                        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                        classWorkerURL: await toBlobURL(`${ffmpegBaseURL}/814.ffmpeg.js`, 'text/javascript')
+                    ffmpeg = new window.FFmpegWASM.FFmpeg(); 
+                    ffmpeg.on('log', ({ message }) => console.log(message));
+                    ffmpeg.on('progress', ({ progress }) => { 
+                        const percent = Math.min(100, Math.max(0, Math.round(progress * 100))); 
+                        ui.progressBar.style.width = `${percent}%`; 
+                        ui.progressText.textContent = `${percent}%`; 
                     });
                 }
+                
+                if (!ffmpeg.loaded) {
+                    // 【防卡死機制】加入超時判定，避免因為外部資源下載卡死導致無限轉圈
+                    ui.loadingText.textContent = '正在從外部伺服器下載轉碼引擎 (約 30MB，需時較長請稍候)...';
+                    const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+                    const toBlobURL = window.FFmpegUtil.toBlobURL;
+                    
+                    const loadTask = async () => {
+                        await ffmpeg.load({
+                            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        });
+                    };
 
-                ui.loadingText.textContent = '正在寫入暫存檔案...'; await ffmpeg.writeFile('input.webm', await window.FFmpegUtil.fetchFile(webmBlob));
-                ui.loadingText.textContent = '正在將畫面轉碼為 MP4，請耐心等候...'; ui.progressContainer.classList.remove('hidden'); ui.progressContainer.classList.add('flex');
+                    // 加入 45 秒超時防護，超過時間則丟出錯誤，進入 catch 區塊
+                    const timeoutTask = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error("下載外部轉碼引擎超時 (可能是您的網路過慢或被防火牆阻擋)")), 45000)
+                    );
+
+                    await Promise.race([loadTask(), timeoutTask]);
+                }
+
+                ui.loadingText.textContent = '正在寫入暫存檔案...'; 
+                await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(videoBlob));
+                
+                ui.loadingText.textContent = '正在進行高效轉碼，請耐心等候...'; 
+                ui.progressContainer.classList.remove('hidden'); ui.progressContainer.classList.add('flex');
                 
                 const isFast = quality === 'fast'; let vfFilter = '';
                 if (ratio === '16:9') { const outW = isFast ? 1280 : 1920; const outH = isFast ? 720 : 1080; vfFilter = `crop=w='min(iw,ih*16/9)':h='min(ih,iw*9/16)',scale=${outW}:${outH}`;
                 } else if (ratio === '9:16') { const outW = isFast ? 720 : 1080; const outH = isFast ? 1280 : 1920; vfFilter = `crop=w='min(iw,ih*9/16)':h='min(ih,iw*16/9)',scale=${outW}:${outH}`;
                 } else { vfFilter = isFast ? 'scale=-2:720' : 'scale=trunc(iw/2)*2:trunc(ih/2)*2'; }
 
+                // 【修復】將轉碼預設值改為 ultrafast (極速模式)，防止瀏覽器在 1080p 處理中發生記憶體溢出 (OOM) 導致崩潰卡死
                 const ffmpegArgs = [
-                    '-i', 'input.webm', '-c:v', 'libx264', '-preset', isFast ? 'ultrafast' : 'superfast', '-crf', isFast ? '28' : '18', '-r', isFast ? '30' : '60', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-vf', vfFilter
+                    '-i', inputName, 
+                    '-c:v', 'libx264', 
+                    '-preset', 'ultrafast', 
+                    '-crf', isFast ? '28' : '23', 
+                    '-r', isFast ? '30' : '60', 
+                    '-pix_fmt', 'yuv420p', 
+                    '-movflags', '+faststart', 
+                    '-vf', vfFilter
                 ];
 
                 if (state.hasAudioTrack) ffmpegArgs.push('-c:a', 'aac', '-b:a', isFast ? '128k' : '320k', '-ar', '44100'); 
-                ffmpegArgs.push('output.mp4'); await ffmpeg.exec(ffmpegArgs);
+                
+                ffmpegArgs.push('output.mp4'); 
+                await ffmpeg.exec(ffmpegArgs);
 
-                ui.loadingText.textContent = '轉碼完成！準備下載...'; const data = await ffmpeg.readFile('output.mp4'); const mp4Blob = new Blob([data], { type: 'video/mp4' });
-                downloadBlob(mp4Blob, 'visualizer_pro.mp4'); await ffmpeg.deleteFile('input.webm'); await ffmpeg.deleteFile('output.mp4');
+                ui.loadingText.textContent = '轉碼完成！準備下載...'; 
+                const data = await ffmpeg.readFile('output.mp4'); 
+                const mp4Blob = new Blob([data], { type: 'video/mp4' });
+                downloadBlob(mp4Blob, 'visualizer_pro.mp4'); 
+                
+                await ffmpeg.deleteFile(inputName); 
+                await ffmpeg.deleteFile('output.mp4');
 
             } catch (error) {
-                console.error("FFmpeg 轉檔失敗:", error); alert("前端 MP4 轉碼失敗，系統已為您自動降級導出原始的 WebM 影片檔案！"); downloadBlob(webmBlob, 'visualizer.webm');
+                console.error("FFmpeg 轉檔失敗:", error); 
+                // 【優化】明確告知用戶是外部引擎的問題，並自動提供無損的原檔下載，保障心血不白費
+                alert(`前端 MP4 轉碼發生異常 (${error.message || '未知錯誤'})\n\n這通常是因為網路阻擋了轉碼引擎，或記憶體不足。系統已為您自動降級導出原始影片檔案！\n建議：您可以直接將畫質選為「⚡ WebM (免轉)」，即可一秒匯出。`); 
+                downloadBlob(videoBlob, `visualizer_fallback.${ext}`);
             } finally {
                 ui.loadingOverlay.classList.add('hidden'); ui.loadingOverlay.style.display = 'none'; showStatus('錄製與導出完成！');
             }
