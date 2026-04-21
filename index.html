@@ -251,6 +251,20 @@
                 <!-- 手機版隱藏垂直分隔線 -->
                 <div class="hidden sm:block w-px h-10 bg-white/20"></div>
 
+                <!-- 新增：全螢幕/還原按鈕 -->
+                <button id="fullscreen-btn" class="cursor-pointer group flex flex-col items-center gap-1 transition-transform hover:scale-105 active:scale-95">
+                    <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-cyan-500/50 transition-colors border-2 border-transparent shadow-[0_0_10px_rgba(6,182,212,0)] group-hover:shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                        <!-- 全螢幕圖示 -->
+                        <svg id="icon-fullscreen-enter" class="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                        <!-- 還原圖示 -->
+                        <svg id="icon-fullscreen-exit" class="hidden w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 14h4v4m0-4l-5 5m11-5h4v4m-4 0l5 5M4 10h4V6m0 4l-5-5m11 5h4V6m-4 4l5-5"></path></svg>
+                    </div>
+                    <span id="fullscreen-text" class="text-[10px] md:text-xs font-medium">全螢幕</span>
+                </button>
+
+                <!-- 手機版隱藏垂直分隔線 -->
+                <div class="hidden sm:block w-px h-10 bg-white/20"></div>
+
                 <!-- 美化後的主播放按鈕：自適應縮放 -->
                 <button id="play-btn" class="cursor-pointer group flex flex-col items-center gap-1.5 transition-all hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                     <div class="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 text-white flex items-center justify-center transition-all shadow-[0_0_15px_rgba(168,85,247,0.4)] group-hover:shadow-[0_0_25px_rgba(236,72,153,0.8)] border border-white/20 relative overflow-hidden">
@@ -276,11 +290,20 @@
                         </span>
                     </button>
                     
-                    <select id="export-quality" class="bg-black/60 text-gray-300 text-[9px] md:text-[10px] rounded border border-red-500/40 px-1 py-0.5 outline-none focus:border-red-500 cursor-pointer hover:bg-black transition-colors" title="選擇導出畫質">
-                        <option value="webm">⚡ 極速 WebM (免轉檔)</option>
-                        <option value="fast">📱 標準 MP4 (720p 30fps)</option>
-                        <option value="high" selected>🎬 極致 MP4 (1080p 60fps)</option>
-                    </select>
+                    <div class="flex gap-1 mt-1">
+                        <select id="export-quality" class="bg-black/60 text-gray-300 text-[9px] md:text-[10px] rounded border border-red-500/40 px-1 py-0.5 outline-none focus:border-red-500 cursor-pointer hover:bg-black transition-colors" title="選擇導出畫質">
+                            <option value="webm">⚡ WebM (免轉檔)</option>
+                            <option value="fast">📱 MP4 (720p 30fps)</option>
+                            <option value="high" selected>🎬 MP4 (1080p 60fps)</option>
+                        </select>
+                        
+                        <!-- 新增：導出比例選單 -->
+                        <select id="export-ratio" class="bg-black/60 text-gray-300 text-[9px] md:text-[10px] rounded border border-blue-500/40 px-1 py-0.5 outline-none focus:border-blue-500 cursor-pointer hover:bg-black transition-colors" title="選擇影片比例">
+                            <option value="original" selected>📐 原始</option>
+                            <option value="16:9">📺 16:9</option>
+                            <option value="9:16">📱 9:16</option>
+                        </select>
+                    </div>
                 </div>
 
             </div>
@@ -418,7 +441,13 @@
 
             fxModal: document.getElementById('fx-modal'),
             closeFxModal: document.getElementById('close-fx-modal'),
-            fxBtn: document.getElementById('fx-btn')
+            fxBtn: document.getElementById('fx-btn'),
+
+            // 新增：全螢幕按鈕 UI 綁定
+            fullscreenBtn: document.getElementById('fullscreen-btn'),
+            iconFullscreenEnter: document.getElementById('icon-fullscreen-enter'),
+            iconFullscreenExit: document.getElementById('icon-fullscreen-exit'),
+            fullscreenText: document.getElementById('fullscreen-text')
         };
 
         // ==========================================
@@ -500,6 +529,47 @@
         });
 
         ui.closeFxModal.addEventListener('click', () => ui.fxModal.classList.add('hidden'));
+
+        // ==========================================
+        // 全螢幕切換邏輯 (Fullscreen API)
+        // ==========================================
+        ui.fullscreenBtn.addEventListener('click', () => {
+            const docElm = document.documentElement;
+            // 判斷目前是否處於全螢幕狀態
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+            
+            if (!isFullscreen) {
+                if (docElm.requestFullscreen) {
+                    docElm.requestFullscreen();
+                } else if (docElm.webkitRequestFullscreen) { // 相容 Safari
+                    docElm.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { // 相容 Safari
+                    document.webkitExitFullscreen();
+                }
+            }
+        });
+
+        // 監聽全螢幕狀態改變，自動切換按鈕圖示與文字
+        function updateFullscreenUI() {
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+            if (isFullscreen) {
+                ui.iconFullscreenEnter.classList.add('hidden');
+                ui.iconFullscreenExit.classList.remove('hidden');
+                ui.fullscreenText.textContent = '還原';
+            } else {
+                ui.iconFullscreenEnter.classList.remove('hidden');
+                ui.iconFullscreenExit.classList.add('hidden');
+                ui.fullscreenText.textContent = '全螢幕';
+            }
+        }
+
+        document.addEventListener('fullscreenchange', updateFullscreenUI);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+
 
         slScale.addEventListener('input', (e) => { state.vScale = parseFloat(e.target.value); syncFXPanel(); });
         slRotation.addEventListener('input', (e) => { state.vRotation = parseFloat(e.target.value); syncFXPanel(); });
@@ -1854,11 +1924,12 @@
 
         async function processVideo() {
             const quality = document.getElementById('export-quality').value;
+            const ratio = document.getElementById('export-ratio').value;
             const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
             
             if (quality === 'webm') {
                 downloadBlob(webmBlob, 'visualizer_raw.webm');
-                showStatus('⚡ 極速 WebM 原檔導出完成！');
+                showStatus('⚡ 極速 WebM 原檔導出完成！(注意：WebM 模式將維持原始螢幕比例)');
                 return;
             }
 
@@ -1900,6 +1971,24 @@
                 ui.progressContainer.classList.add('flex');
                 
                 const isFast = quality === 'fast';
+                
+                // [智慧裁切邏輯] 根據選擇的比例，動態生成 FFmpeg 的 crop 與 scale 濾鏡參數
+                let vfFilter = '';
+                if (ratio === '16:9') {
+                    // 智慧中心裁切為 16:9，並縮放至標準解析度
+                    const outW = isFast ? 1280 : 1920;
+                    const outH = isFast ? 720 : 1080;
+                    vfFilter = `crop=w='min(iw,ih*16/9)':h='min(ih,iw*9/16)',scale=${outW}:${outH}`;
+                } else if (ratio === '9:16') {
+                    // 智慧中心裁切為 9:16 (直式短影音)，並縮放至標準解析度
+                    const outW = isFast ? 720 : 1080;
+                    const outH = isFast ? 1280 : 1920;
+                    vfFilter = `crop=w='min(iw,ih*9/16)':h='min(ih,iw*16/9)',scale=${outW}:${outH}`;
+                } else {
+                    // 維持原始比例，僅做安全偶數化與縮放處理
+                    vfFilter = isFast ? 'scale=-2:720' : 'scale=trunc(iw/2)*2:trunc(ih/2)*2';
+                }
+
                 const ffmpegArgs = [
                     '-i', 'input.webm', 
                     '-c:v', 'libx264', 
@@ -1908,7 +1997,7 @@
                     '-r', isFast ? '30' : '60',
                     '-pix_fmt', 'yuv420p', 
                     '-movflags', '+faststart',
-                    '-vf', isFast ? 'scale=-2:720' : 'scale=trunc(iw/2)*2:trunc(ih/2)*2'
+                    '-vf', vfFilter
                 ];
 
                 if (state.hasAudioTrack) ffmpegArgs.push('-c:a', 'aac', '-b:a', isFast ? '128k' : '320k', '-ar', '44100'); 
