@@ -174,12 +174,15 @@
 
                 <div class="w-px h-10 bg-white/20"></div>
 
-                <button id="play-btn" class="cursor-pointer group flex flex-col items-center gap-1 transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <div class="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center group-hover:bg-gray-200 transition-colors shadow-lg">
-                        <svg id="play-icon" class="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
-                        <svg id="pause-icon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                <!-- 美化後的主播放按鈕 -->
+                <button id="play-btn" class="cursor-pointer group flex flex-col items-center gap-1.5 transition-all hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 text-white flex items-center justify-center transition-all shadow-[0_0_15px_rgba(168,85,247,0.4)] group-hover:shadow-[0_0_25px_rgba(236,72,153,0.8)] border border-white/20 relative overflow-hidden">
+                        <!-- 玻璃反光效果 -->
+                        <div class="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <svg id="play-icon" class="w-8 h-8 ml-1 relative z-10 drop-shadow-md" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                        <svg id="pause-icon" class="w-8 h-8 hidden relative z-10 drop-shadow-md" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
                     </div>
-                    <span id="play-text" class="text-xs font-medium">播放 MP3</span>
+                    <span id="play-text" class="text-[13px] font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-widest drop-shadow-sm">播放 MP3</span>
                 </button>
 
                 <div class="w-px h-10 bg-white/20"></div>
@@ -396,7 +399,7 @@
         scene.add(textSprite);
 
         // ==========================================
-        // 新增/修改：支援標準 LRC 動態歌詞解析
+        // 新增/修改：支援標準 LRC 動態歌詞解析與靜態排版
         // ==========================================
         function parseLyrics(text) {
             if(text.trim() === '') {
@@ -407,14 +410,14 @@
                 return;
             }
 
-            // 正則表達式：偵測是否包含標準 LRC 時間標籤如 [00:15.30]
             const lrcRegex = /\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?\]/;
-            
-            if (lrcRegex.test(text)) {
-                // --- LRC 模式 ---
-                state.isLrcMode = true;
+            state.isLrcMode = lrcRegex.test(text);
+            let plainTextForFallback = text;
+
+            if (state.isLrcMode) {
                 state.lrcLines = [];
                 const lines = text.split('\n');
+                const cleanLines = [];
                 
                 lines.forEach(line => {
                     const match = line.match(/\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?\]/);
@@ -424,31 +427,28 @@
                         const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
                         const timeInSeconds = mins * 60 + secs + ms / 1000;
                         
-                        // 移除所有時間標籤，僅保留歌詞純文字
                         const content = line.replace(/\[.*?\]/g, '').trim();
                         if (content) {
                             state.lrcLines.push({ time: timeInSeconds, text: content });
                         }
                     }
+                    // 將純文字儲存起來，供現場收音的備用排版使用 (過濾掉時間標籤)
+                    const clean = line.replace(/\[.*?\]/g, '').trim();
+                    if (clean) cleanLines.push(clean);
                 });
                 
-                // 依據時間軸排序以防錯亂
                 state.lrcLines.sort((a, b) => a.time - b.time);
                 state.lrcScrollY = 0; 
-                state.textDirty = true;
-                showStatus('LRC 動態歌詞解析成功！');
-                return;
+                plainTextForFallback = cleanLines.join('\n');
             }
 
-            // --- Fallback: 原本的純文字等速滾動模式 ---
-            state.isLrcMode = false;
-            
+            // --- Fallback: 建立純文字排版結構 (現場收音或純文字時使用) ---
             const fontSize = 60; 
             const titleFontSize = 90; 
             const maxWidth = textCanvas.width * 0.85; 
             const lineHeightFactor = 1.4; 
 
-            const originalLines = text.split('\n');
+            const originalLines = plainTextForFallback.split('\n');
             const titleStr = originalLines[0] || '';
             const lyricsStrs = originalLines.slice(1);
 
@@ -486,14 +486,14 @@
 
             state.parsedLyrics = { lines: parsedLines, totalHeight: currentOffsetY };
             state.textDirty = true;
-            showStatus('純文字歌詞已載入 (等速滾動)');
+            showStatus(state.isLrcMode ? 'LRC 動態歌詞解析成功！' : '純文字歌詞已載入');
         }
 
         function renderVisibleLyrics(progress, currentTime = 0) {
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
             
-            // --- LRC 模式：卡點彈出與平滑滾動 ---
-            if (state.isLrcMode && state.lrcLines.length > 0) {
+            // --- LRC 模式：卡點彈出與平滑滾動 (現場收音時強制關閉，改用下方靜態排版) ---
+            if (state.isLrcMode && state.lrcLines.length > 0 && !state.isMicMode) {
                 const canvasCenterY = textCanvas.height / 2;
                 
                 // 尋找目前正在演唱的這句歌詞 Index
@@ -550,7 +550,7 @@
                 return;
             }
             
-            // --- Fallback 純文字模式：等速滾動 ---
+            // --- Fallback 純文字模式：等速滾動 (或現場收音靜態縮放) ---
             if (!state.parsedLyrics || state.parsedLyrics.lines.length === 0) {
                 textTexture.needsUpdate = true;
                 return;
@@ -558,25 +558,43 @@
 
             const canvasCenterY = textCanvas.height / 2;
             let baseStartY = 0;
+            let scale = 1;
 
-            if (state.parsedLyrics.totalHeight <= textCanvas.height * 0.8) {
-                baseStartY = (textCanvas.height - state.parsedLyrics.totalHeight) / 2;
+            if (state.isMicMode) {
+                // 現場收音模式：不會滾動，一次性顯示完整排版，並自動縮放以適應螢幕高度
+                if (state.parsedLyrics.totalHeight > textCanvas.height * 0.85) {
+                    scale = (textCanvas.height * 0.85) / state.parsedLyrics.totalHeight;
+                }
+                baseStartY = (textCanvas.height - (state.parsedLyrics.totalHeight * scale)) / 2;
             } else {
-                const startScroll = canvasCenterY; 
-                const endScroll = canvasCenterY - state.parsedLyrics.totalHeight;
-                baseStartY = startScroll + (endScroll - startScroll) * progress;
+                // MP3 模式：等速向上滾動
+                if (state.parsedLyrics.totalHeight <= textCanvas.height * 0.8) {
+                    baseStartY = (textCanvas.height - state.parsedLyrics.totalHeight) / 2;
+                } else {
+                    const startScroll = canvasCenterY; 
+                    const endScroll = canvasCenterY - state.parsedLyrics.totalHeight;
+                    baseStartY = startScroll + (endScroll - startScroll) * progress;
+                }
             }
 
-            textCtx.fillStyle = "white"; textCtx.textAlign = "center"; textCtx.textBaseline = "middle"; textCtx.shadowColor = "white";
+            textCtx.save();
+            textCtx.fillStyle = "white"; 
+            textCtx.textAlign = "center"; 
+            textCtx.textBaseline = "middle"; 
+            textCtx.shadowColor = "white";
 
             for (const line of state.parsedLyrics.lines) {
-                const y = baseStartY + line.offsetY;
+                const actualOffsetY = line.offsetY * scale;
+                const y = baseStartY + actualOffsetY;
+                
                 if (y > -150 && y < textCanvas.height + 150) {
-                    textCtx.font = `bold ${line.size}px 'Segoe UI', sans-serif`;
-                    textCtx.shadowBlur = line.size * 0.3;
+                    const scaledSize = line.size * scale;
+                    textCtx.font = `bold ${scaledSize}px 'Segoe UI', sans-serif`;
+                    textCtx.shadowBlur = scaledSize * 0.3;
                     textCtx.fillText(line.text, textCanvas.width / 2, y);
                 }
             }
+            textCtx.restore();
             textTexture.needsUpdate = true;
         }
 
@@ -972,6 +990,7 @@
                 
                 state.isMicMode = true;
                 state.isPlaying = true;
+                state.textDirty = true; // 新增：觸發重新排版，切換成靜態一次性顯示
                 
                 ui.micBtn.querySelector('div').classList.add('bg-red-500/50', 'border-red-500');
                 ui.playBtn.disabled = true; 
@@ -1098,6 +1117,7 @@
                     state.micStream = null;
                 }
                 state.isMicMode = false;
+                state.textDirty = true; // 新增：觸發重新排版，恢復滾動模式準備
                 ui.micBtn.querySelector('div').classList.remove('bg-red-500/50', 'border-red-500');
                 ui.playBtn.disabled = false; 
             } else {
