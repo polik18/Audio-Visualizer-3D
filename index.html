@@ -532,6 +532,9 @@
             overlayTimer: null, 
             isDraggingProgress: false,
             
+            // 【新增】記錄上一幀的真實時間，用於 VFR 實時對齊
+            lastRecordFrameTime: 0,
+            
             metroIsPlaying: false,
             metroBpm: 120,
             metroBeatsPerBar: 4,
@@ -1804,15 +1807,18 @@
             renderer.render(lyricsScene, camera); 
 
             if (state.isRecording && state.videoEncoder && state.videoEncoder.state === 'configured') {
-                // 【修復】限制編碼佇列數量，防止 1080p 超高解析度吃光記憶體導致 Cannot call 'flush' on a closed codec 崩潰
+                // 【修復】限制編碼佇列數量，防止超高解析度吃光記憶體
                 if (state.videoEncoder.encodeQueueSize > 5) return;
 
                 const now = performance.now();
-                const elapsed = now - state.recordingStartTime;
-                const targetFrames = Math.floor((elapsed / 1000) * state.recordTargetFps);
+                const frameIntervalMs = 1000 / state.recordTargetFps;
                 
-                if (state.recordedFrames < targetFrames) {
-                    const timestampUs = Math.floor((state.recordedFrames * 1000000) / state.recordTargetFps);
+                // 【終極修復】放棄人工補幀，改用絕對真實時間軸 (VFR 動態幀率)
+                // 只要現實時間達到間隔，就抓取一幀並蓋上絕對時間戳，保證長度與音樂 100% 同步！
+                if (now - state.lastRecordFrameTime >= frameIntervalMs) {
+                    state.lastRecordFrameTime = now;
+                    const elapsedMs = now - state.recordingStartTime;
+                    const timestampUs = Math.floor(elapsedMs * 1000);
                     
                     const sw = renderer.domElement.width; const sh = renderer.domElement.height;
                     const tw = state.recordCanvas.width; const th = state.recordCanvas.height;
@@ -1821,7 +1827,7 @@
                     if (sRatio > tRatio) { cropW = sh * tRatio; cropX = (sw - cropW) / 2; } 
                     else { cropH = sw / tRatio; cropY = (sh - cropH) / 2; }
 
-                    // 【畫質修復】強制開啟超採樣平滑，消除縮放擷取時產生的馬賽克鋸齒
+                    // 強制開啟超採樣平滑，保留高畫質細節
                     state.recordCtx.imageSmoothingEnabled = true;
                     state.recordCtx.imageSmoothingQuality = 'high';
                     state.recordCtx.fillStyle = 'black';
@@ -1836,11 +1842,6 @@
                     
                     frame.close();
                     state.recordedFrames++;
-
-                    // 【效能防禦鎖】如果算圖落後現實時間太多（超過 5 幀），強制重設時間軸基準點，不允許無限補幀拖垮編碼器
-                    if (targetFrames - state.recordedFrames > 5) {
-                        state.recordingStartTime = now - ((state.recordedFrames * 1000) / state.recordTargetFps);
-                    }
                 }
             }
         }
@@ -1996,6 +1997,7 @@
 
             state.recordedFrames = 0;
             state.recordingStartTime = performance.now(); state.recordingStartTimeReal = Date.now();
+            state.lastRecordFrameTime = 0; // 【初始化】確保第一幀立即觸發
             showStatus('✨ 極致畫質引擎運轉中 (錄製已開始)...');
 
             ui.recordInner.classList.remove('rounded-full', 'w-4', 'h-4'); ui.recordInner.classList.add('rounded-sm', 'w-6', 'h-6'); ui.recordCircle.classList.add('animate-pulse');
