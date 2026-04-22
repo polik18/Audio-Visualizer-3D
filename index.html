@@ -50,8 +50,8 @@
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
             <svg class="w-20 h-20 text-purple-400 mb-6 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-            <h2 class="text-3xl font-bold text-white mb-3 text-center">拖曳 MP3 或 底圖/影片 至此處</h2>
-            <p class="text-gray-400 text-center text-sm">放開滑鼠即可自動載入音樂或更換背景</p>
+            <h2 class="text-2xl font-bold text-white mb-3 text-center">拖曳 MP3、底圖/影片 或 歌詞檔 至此處</h2>
+            <p class="text-gray-400 text-center text-sm">放開滑鼠即可自動批次載入多個檔案</p>
         </div>
     </div>
 
@@ -219,16 +219,9 @@
 
     <div id="canvas-container"></div>
 
-    <div class="fixed bottom-1 left-0 w-full text-center pointer-events-none z-50">
-        <p class="text-[10px] text-white/30 tracking-wider font-light">
-            免責聲明：本網頁內容僅供參考，不代表任何官方立場或法律建議。使用者應自行評估資訊的準確性與適用性。
-        </p>
-    </div>
-
-    <!-- 將 h-screen 改為 h-[100dvh] 以完美適配手機動態網址列，加入 transition-all 以支援全域收合與透明度連動 -->
     <div class="relative z-10 flex flex-col h-[100dvh] justify-between p-3 md:p-6 pointer-events-none overflow-hidden">
         
-        <!-- 頂部區塊 (全域連動) -->
+        <!-- 頂部區塊 -->
         <header id="main-header" class="flex flex-col md:flex-row justify-between items-start gap-3 md:gap-4 pointer-events-auto w-full transition-all duration-700 ease-in-out transform">
             <div class="flex flex-col gap-2 md:gap-4 w-full md:w-auto">
                 <div id="title-container" class="glass-panel rounded-2xl p-4 w-full md:max-w-md">
@@ -242,8 +235,8 @@
             </div>
 
             <div class="flex flex-col items-start md:items-end gap-2 w-full md:w-auto mt-2 md:mt-0">
-                <div id="lyrics-container" class="glass-panel rounded-xl p-3 flex flex-col gap-2 w-full md:w-72 max-w-full shadow-lg">
-                    <textarea id="lyrics-input" rows="2" placeholder="輸入純文字或貼上 .lrc 動態歌詞...&#10;(例如: [00:15.30] 某段歌詞...)" class="w-full bg-black/50 text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 placeholder-gray-400 resize-none"></textarea>
+                <div id="lyrics-container" class="glass-panel rounded-xl p-2 md:p-3 flex flex-col gap-2 w-full md:w-72 max-w-full shadow-lg transition-all duration-300 focus-within:md:w-[28rem] focus-within:shadow-[0_0_25px_rgba(168,85,247,0.4)] relative z-[100]">
+                    <textarea id="lyrics-input" placeholder="📝 點擊輸入或貼上歌詞..." class="w-full bg-black/50 text-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 placeholder-gray-400 resize-none transition-all duration-300 h-10 focus:h-[40vh] md:focus:h-72 leading-relaxed"></textarea>
                 </div>
                 
                 <div id="instructions-container" class="glass-panel rounded-xl p-3 text-xs text-gray-300 w-full md:w-72 space-y-2 shadow-lg hidden sm:block">
@@ -273,20 +266,30 @@
                             </div>
                         </div>
                         
-                        <p class="flex justify-between items-center text-[10px] mt-1 pt-1 border-t border-white/10">
-                            <span><kbd class="bg-gray-800 px-1 rounded border border-gray-600">C</kbd></span> 
-                            <span class="text-gray-400">開啟 / 關閉自動換場</span>
-                        </p>
-                        <p class="flex justify-between items-center text-[10px]">
-                            <span><kbd class="bg-gray-800 px-1 rounded border border-gray-600">空白鍵</kbd></span> 
-                            <span class="text-gray-400">暫停 / 繼續播放</span>
-                        </p>
+                        <!-- 將純文字提示改為可點擊的互動按鈕，加入 hover 與 active 視覺回饋 -->
+                        <div id="btn-hotkey-c" class="flex justify-between items-center text-[10px] mt-1 pt-2 border-t border-white/10 cursor-pointer hover:bg-white/10 active:bg-white/20 p-1.5 rounded transition-colors -mx-1.5">
+                            <span><kbd class="bg-gray-800 px-1 rounded border border-gray-600 pointer-events-none">C</kbd></span> 
+                            <span class="text-gray-400 pointer-events-none">開啟 / 關閉自動換場</span>
+                        </div>
+                        <div id="btn-hotkey-space" class="flex justify-between items-center text-[10px] cursor-pointer hover:bg-white/10 active:bg-white/20 p-1.5 rounded transition-colors -mx-1.5 mt-0.5">
+                            <span><kbd class="bg-gray-800 px-1 rounded border border-gray-600 pointer-events-none">空白鍵</kbd></span> 
+                            <span class="text-gray-400 pointer-events-none">暫停 / 繼續播放</span>
+                        </div>
+                        <div id="btn-hotkey-enter" class="flex justify-between items-center text-[10px] cursor-pointer hover:bg-white/10 active:bg-white/20 p-1.5 rounded transition-colors -mx-1.5 mt-0.5">
+                            <span><kbd class="bg-gray-800 px-1 rounded border border-gray-600 pointer-events-none">Enter</kbd></span> 
+                            <span class="text-gray-400 pointer-events-none">收合 / 展開介面</span>
+                        </div>
+                        <!-- 新增 Esc 快捷鍵提示 -->
+                        <div id="btn-hotkey-esc" class="flex justify-between items-center text-[10px] cursor-pointer hover:bg-white/10 active:bg-white/20 p-1.5 rounded transition-colors -mx-1.5 mt-0.5">
+                            <span><kbd class="bg-gray-800 px-1 rounded border border-gray-600 pointer-events-none">Esc</kbd></span> 
+                            <span class="text-gray-400 pointer-events-none">關閉視窗 / 取消焦點</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- 底部工具列：模組化 UI 分類設計 (全域連動) -->
+        <!-- 底部工具列 -->
         <footer id="footer-container" class="relative flex justify-center pointer-events-auto mb-2 md:mb-4 transition-all duration-700 ease-in-out transform w-full px-1">
             
             <button id="toggle-ui-btn" class="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-gray-900/80 hover:bg-gray-800 border border-white/20 text-white rounded-full p-1.5 md:p-2 backdrop-blur-md transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:shadow-[0_0_25px_rgba(168,85,247,0.6)] z-20 group" title="收起/展開全域介面">
@@ -456,9 +459,10 @@
             isRecording: false,
             recordMimeType: 'video/webm', 
             
-            // 【極速導出核心】隱藏畫布 (直接在 GPU 層面完成縮放與裁切，不用依賴外部軟體轉碼)
             recordCanvas: null,
             recordCtx: null,
+            recordTargetFps: 30, // 控制錄影繪製幀數上限，降低效能開銷
+            lastRecordFrameTime: 0, 
 
             currentScene: 0,
             bassHitTimer: 0,
@@ -506,7 +510,7 @@
 
             recordingStartTime: 0,
             recordingInterval: null,
-            maxRecordTimeMs: 60 * 60 * 1000, // 解鎖：將最大錄製時間延長為 60 分鐘 (3600000 毫秒)
+            maxRecordTimeMs: 60 * 60 * 1000, 
             
             overlayTimer: null, 
             isDraggingProgress: false,
@@ -611,6 +615,58 @@
         };
 
         // ==========================================
+        // 處理 Esc 鍵的統一退出與關閉邏輯
+        // ==========================================
+        function handleEscape() {
+            let acted = false;
+            
+            // 1. 取消輸入框焦點 (防止誤觸與鎖死)
+            if (document.activeElement === ui.lyricsInput || document.activeElement.tagName === 'INPUT') {
+                document.activeElement.blur();
+                acted = true;
+            }
+            
+            // 2. 模擬點擊各類彈出視窗的關閉按鈕 (確保觸發正確的清理邏輯)
+            if (!ui.dropZone.classList.contains('hidden')) { ui.closeDropZone.click(); acted = true; }
+            if (!ui.audioSourceModal.classList.contains('hidden')) { ui.closeAudioModal.click(); acted = true; }
+            if (!ui.fxModal.classList.contains('hidden')) { ui.closeFxModal.click(); acted = true; }
+            if (!ui.tunerModal.classList.contains('hidden')) { ui.closeTunerModal.click(); acted = true; }
+            if (!ui.metroModal.classList.contains('hidden')) { ui.closeMetroModal.click(); acted = true; }
+            
+            // 3. 取消處理中的錄影導出作業
+            if (!ui.loadingOverlay.classList.contains('hidden')) { 
+                document.getElementById('cancel-export-btn').click(); 
+                acted = true; 
+            }
+
+            // 4. 若位於全螢幕模式，順便退出全螢幕
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                acted = true;
+            }
+
+            return acted;
+        }
+
+        // ==========================================
+        // 初始化優化的 AudioContext (解決爆音第一步)
+        // ==========================================
+        function initAudioContext() {
+            if (!state.audioContext) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                try {
+                    state.audioContext = new AudioContextClass({ latencyHint: 'playback' });
+                } catch(e) {
+                    state.audioContext = new AudioContextClass();
+                }
+            }
+            if (state.audioContext.state === 'suspended') {
+                state.audioContext.resume();
+            }
+        }
+
+        // ==========================================
         // [UX 優化] 全域一體化收縮與閒置系統
         // ==========================================
         let isUICollapsed = false;
@@ -662,9 +718,6 @@
         window.addEventListener('keydown', wakeUI);
         window.addEventListener('click', wakeUI);
 
-        // ==========================================
-        // 中央播放/暫停 視覺動畫回饋
-        // ==========================================
         function showPlayPauseOverlay(isPlaying) {
             if (isPlaying) {
                 ui.overlayIconPlay.classList.remove('hidden');
@@ -685,16 +738,8 @@
             }, 800);
         }
 
-        // ==========================================
-        // [行動裝置 UX] iOS Safari 音訊自動解鎖機制
-        // ==========================================
         function unlockAudioContext() {
-            if (!state.audioContext) {
-                state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (state.audioContext.state === 'suspended') {
-                state.audioContext.resume();
-            }
+            initAudioContext();
             window.removeEventListener('click', unlockAudioContext, true);
             window.removeEventListener('touchstart', unlockAudioContext, { passive: true, capture: true });
         }
@@ -762,7 +807,7 @@
         document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
 
         // ==========================================
-        // 專業調音器 (Visual Tuner) 邏輯
+        // 專業調音器與節拍器
         // ==========================================
         ui.openTunerBtn.addEventListener('click', () => {
             ui.tunerModal.classList.remove('hidden');
@@ -815,16 +860,10 @@
             return sampleRate / T0;
         }
 
-        function noteFromPitch(frequency) {
-            const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
-            return Math.round(noteNum) + 69;
-        }
+        function noteFromPitch(frequency) { return Math.round(12 * (Math.log(frequency / 440) / Math.log(2))) + 69; }
         function frequencyFromNoteNumber(note) { return 440 * Math.pow(2, (note - 69) / 12); }
         function centsOffFromPitch(frequency, note) { return Math.floor(1200 * Math.log(frequency / frequencyFromNoteNumber(note)) / Math.log(2)); }
 
-        // ==========================================
-        // 高級節拍器 (Visual Metronome) 邏輯
-        // ==========================================
         ui.openMetroBtn.addEventListener('click', () => { ui.metroModal.classList.remove('hidden'); renderMetroLeds(); });
         ui.closeMetroModal.addEventListener('click', () => { ui.metroModal.classList.add('hidden'); });
 
@@ -873,10 +912,10 @@
         }
 
         function scheduleNote(beatNumber, time) {
-            if (!state.audioContext) unlockAudioContext();
+            initAudioContext();
             if (!state.analyser) {
                 state.analyser = state.audioContext.createAnalyser();
-                state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; // 終極優化：降低平滑度，讓節拍更生硬敏銳
+                state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; 
                 state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
             }
 
@@ -913,9 +952,7 @@
         ui.metroToggleBtn.addEventListener('click', () => {
             state.metroIsPlaying = !state.metroIsPlaying;
             if (state.metroIsPlaying) {
-                if (!state.audioContext) unlockAudioContext();
-                if (state.audioContext.state === 'suspended') state.audioContext.resume();
-                
+                initAudioContext();
                 state.isPlaying = true; 
                 state.metroCurrentBeat = 0;
                 state.metroNextNoteTime = state.audioContext.currentTime + 0.05;
@@ -973,6 +1010,22 @@
             });
         });
 
+        // 綁定 C鍵、空白鍵、Enter鍵、Esc鍵 的直接點擊與觸控事件
+        document.getElementById('btn-hotkey-c').addEventListener('click', () => {
+            state.isAutoMode = !state.isAutoMode; 
+            showStatus(state.isAutoMode ? '自動模式開啟' : '手動模式開啟'); 
+            syncFXPanel();
+        });
+        document.getElementById('btn-hotkey-space').addEventListener('click', () => {
+            ui.playBtn.click(); 
+        });
+        document.getElementById('btn-hotkey-enter').addEventListener('click', () => {
+            setUICollapseState(!isUICollapsed); 
+        });
+        document.getElementById('btn-hotkey-esc').addEventListener('click', () => {
+            handleEscape();
+        });
+
         function showStatus(text, duration = 3000) {
             ui.statusBox.textContent = text; ui.statusBox.classList.remove('hidden');
             setTimeout(() => ui.statusBox.classList.add('hidden'), duration);
@@ -985,41 +1038,33 @@
         const scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x000000, 0.002);
 
-        // 獨立的歌詞圖層 (免疫 Bloom 泛光與色差干擾)
         const lyricsScene = new THREE.Scene();
-        
-        // 獨立的底圖/影片圖層 (免疫 Bloom 泛光干擾，保持原始亮度)
         const bgScene = new THREE.Scene();
         bgScene.background = new THREE.Color(0x000000);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 50;
 
-        // 【優化】加入 preserveDrawingBuffer 確保 GPU 隱藏畫布能正確擷取畫面，不出現黑畫面
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
-        // 允許疊加渲染，保護歌詞不被背景吃掉
         renderer.autoClear = false;
         container.appendChild(renderer.domElement);
 
         const composer = new THREE.EffectComposer(renderer);
         const renderPass = new THREE.RenderPass(scene, camera);
         
-        // 恢復清除功能，並設定為透明的黑色背景，避免拖影無限堆疊，同時保留底圖的能見度
         renderPass.clear = true; 
         renderPass.clearColor = new THREE.Color(0x000000);
         renderPass.clearAlpha = 0;
         
         composer.addPass(renderPass);
         
-        // 提高泛光閾值 (Threshold)，防止底圖或普通亮度的物件過度發光 (從 0.2 改為 0.85)
         const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.5, 0.85);
         composer.addPass(bloomPass);
         
         const rgbShiftPass = new THREE.ShaderPass(THREE.RGBShiftShader);
         rgbShiftPass.uniforms['amount'].value = 0.0; 
-        // 讓特效層以「加法混色 (AdditiveBlending)」疊加到底圖上，避免黑背景遮擋底圖，也解決 Bloom 造成的 Alpha 黑邊問題
         rgbShiftPass.material.transparent = true;
         rgbShiftPass.material.blending = THREE.AdditiveBlending;
         composer.addPass(rgbShiftPass);
@@ -1043,11 +1088,10 @@
         const textSprite = new THREE.Sprite(textMaterial);
         textSprite.renderOrder = 999; textSprite.scale.set(100, 50, 1); textSprite.position.set(0, 0, 10); 
         
-        // 將歌詞加入獨立圖層，而非主要 Scene
         lyricsScene.add(textSprite);
 
         // ==========================================
-        // 歌詞渲染邏輯 (防光害描邊處理)
+        // 歌詞渲染邏輯
         // ==========================================
         function parseLyrics(text) {
             state.isPureTextDrawn = false;
@@ -1113,7 +1157,6 @@
             }
             parsedLines.forEach(line => { line.offsetY += (line.size * lineHeightFactor) / 2; });
 
-            // 修正排版：頂部減少空白讓字從中間開始，底部保留大空白確保最後一行能滾動消失
             const visibleHeight = 1024, topPadding = visibleHeight * 0.4, bottomPadding = visibleHeight * 0.8;
             const requiredHeight = currentOffsetY + topPadding + bottomPadding;
             let actualHeight = 1024, contentScale = 1;
@@ -1143,7 +1186,6 @@
                 const scaledSize = line.size * contentScale;
                 textCtx.font = `bold ${scaledSize}px 'Segoe UI', sans-serif`;
                 
-                // 抗光害黑色描邊
                 textCtx.lineWidth = scaledSize * 0.08;
                 textCtx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
                 textCtx.strokeText(line.text, textCanvas.width / 2, y);
@@ -1196,7 +1238,6 @@
                     let opacity = isActive ? 1 : Math.max(0.1, 0.5 - dist * 0.1);
 
                     textCtx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
-                    // 抗光害黑色描邊
                     textCtx.lineWidth = fontSize * 0.08;
                     textCtx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.8})`;
                     textCtx.strokeText(line.text, textCanvas.width / 2, y);
@@ -1208,10 +1249,19 @@
             textTexture.needsUpdate = true; 
         }
 
+        ui.lyricsInput.addEventListener('focus', (e) => {
+            e.target.placeholder = "請輸入純文字或貼上 .lrc 動態歌詞...\n(例如: [00:15.30] 某段歌詞...)\n\n※ 完成後請按 Enter 或點擊旁邊空白處確認。";
+        });
+        
+        ui.lyricsInput.addEventListener('blur', (e) => {
+            e.target.placeholder = "📝 點擊輸入或貼上歌詞...";
+            e.target.scrollTop = 0; 
+            parseLyrics(e.target.value);
+        });
+
         ui.lyricsInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); parseLyrics(e.target.value); e.target.blur(); }
         });
-        ui.lyricsInput.addEventListener('blur', (e) => parseLyrics(e.target.value));
 
         // ==========================================
         // 3D 視覺場景生成
@@ -1224,7 +1274,6 @@
             masterGroup.add(group); groups.push(group);
         }
         
-        // 調整所有場景物件的 Emissive 強度，配合提高後的 Bloom Threshold
         // [0] 深空星塵 
         const particlesGeometry = new THREE.BufferGeometry();
         const posArray = new Float32Array(18000 * 3);
@@ -1234,10 +1283,36 @@
         const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
         groups[0].add(particlesMesh); groups[0].visible = true;
 
-        // [1] 幾何脈動
-        const icosahedronMaterial = new THREE.MeshStandardMaterial({ color: 0xaa00ff, wireframe: true, emissive: 0x330055, emissiveIntensity: 2.0 });
-        const icosahedronMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(15, 2), icosahedronMaterial);
-        groups[1].add(icosahedronMesh);
+        // [1] 幾何脈動 (增強版：多層次幾何核與爆發碎片)
+        const geoCoreMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xaa00ff, emissiveIntensity: 2.0, flatShading: true });
+        const geoCoreMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(8, 0), geoCoreMat);
+        
+        const geoMidMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.8, emissive: 0x002255 });
+        const geoMidMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 1), geoMidMat);
+        
+        const geoOuterMat = new THREE.MeshStandardMaterial({ color: 0xff00aa, wireframe: true, transparent: true, opacity: 0.3 });
+        const geoOuterMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(19, 2), geoOuterMat);
+        
+        groups[1].add(geoCoreMesh, geoMidMesh, geoOuterMesh);
+
+        const geoDebrisList = [];
+        const debrisGeo = new THREE.OctahedronGeometry(1.2, 0);
+        for(let i = 0; i < 80; i++) {
+            const debrisMat = new THREE.MeshStandardMaterial({ color: 0xffffff, wireframe: Math.random() > 0.3, emissive: 0x000000 });
+            const debris = new THREE.Mesh(debrisGeo, debrisMat);
+            const phi = Math.acos(-1 + (2 * i) / 80);
+            const theta = Math.sqrt(80 * Math.PI) * phi;
+            const dist = 25 + Math.random() * 30;
+            debris.position.setFromSphericalCoords(dist, phi, theta);
+            debris.userData = {
+                baseDist: dist,
+                rx: (Math.random() - 0.5) * 0.05,
+                ry: (Math.random() - 0.5) * 0.05,
+                index: i
+            };
+            geoDebrisList.push(debris);
+            groups[1].add(debris);
+        }
 
         // [2] 音軌隧道
         const rings = []; const ringGeo = new THREE.TorusGeometry(20, 0.5, 8, 50); 
@@ -1271,14 +1346,31 @@
             spikes.push(spike); groups[5].add(spike);
         }
 
-        // [6] 霓虹螺旋
-        const helixSpheres = []; const helixGeo = new THREE.SphereGeometry(0.8, 8, 8); 
+        // [6] 霓虹螺旋 (增強版：三股脈衝螺旋+能量柱)
+        const helixSpheres = []; 
+        const hGeo1 = new THREE.SphereGeometry(1.0, 16, 16);
+        const hGeo2 = new THREE.IcosahedronGeometry(0.8, 0);
+        
+        // 中心能量柱
+        const helixPillar = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 2, 120, 16, 1, true),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, wireframe: true, blending: THREE.AdditiveBlending })
+        );
+        groups[6].add(helixPillar);
+
         for(let i = 0; i < 360; i++) {
-            const mat = new THREE.MeshStandardMaterial({color: 0x00ff00, emissive: 0x005500, emissiveIntensity: 1.5});
-            const s1 = new THREE.Mesh(helixGeo, mat); const s2 = new THREE.Mesh(helixGeo, mat);
-            const y = ((i % 120) - 60) * 0.8; const angle = (i % 120) * 0.2; const radius = 8 + Math.floor(i/120)*1.5;
-            s1.position.set(Math.cos(angle)*radius, y, Math.sin(angle)*radius); s2.position.set(Math.cos(angle+Math.PI)*radius, y, Math.sin(angle+Math.PI)*radius);
-            helixSpheres.push(s1, s2); groups[6].add(s1); groups[6].add(s2);
+            const isWire = i % 4 === 0;
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffffff, emissive: 0x000000, emissiveIntensity: 2.5,
+                wireframe: isWire, transparent: true, opacity: isWire ? 0.6 : 1.0
+            });
+            const geo = i % 2 === 0 ? hGeo1 : hGeo2; // 混搭晶體與圓球
+            
+            const s1 = new THREE.Mesh(geo, mat.clone()); s1.userData = { index: i, strand: 0 };
+            const s2 = new THREE.Mesh(geo, mat.clone()); s2.userData = { index: i, strand: 1 };
+            const s3 = new THREE.Mesh(geo, mat.clone()); s3.userData = { index: i, strand: 2 };
+            
+            helixSpheres.push(s1, s2, s3); groups[6].add(s1, s2, s3);
         }
 
         // [7] 方塊矩陣
@@ -1377,7 +1469,9 @@
             renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight); 
         });
 
-        const dragControl = { isDragging: false, prevX: 0, prevY: 0, targetX: 0, targetY: 0 };
+        // 升級版觸控與拖曳控制器：支援單指平移與雙指縮放數值
+        const dragControl = { isDragging: false, isPinching: false, prevX: 0, prevY: 0, pinchDist: 0, targetX: 0, targetY: 0 };
+        
         container.addEventListener('mousedown', (e) => { dragControl.isDragging = true; dragControl.prevX = e.clientX; dragControl.prevY = e.clientY; });
         container.addEventListener('mousemove', (e) => {
             if (!dragControl.isDragging) return;
@@ -1390,15 +1484,63 @@
         container.addEventListener('mouseleave', () => dragControl.isDragging = false);
         container.addEventListener('dblclick', () => { dragControl.targetX = 0; dragControl.targetY = 0; showStatus('特效中心已重置'); });
 
-        container.addEventListener('touchstart', (e) => { if(e.touches.length > 0) { dragControl.isDragging = true; dragControl.prevX = e.touches[0].clientX; dragControl.prevY = e.touches[0].clientY; }});
+        // 雙指距離計算函數
+        function getPinchDistance(touches) {
+            return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+        }
+
+        container.addEventListener('touchstart', (e) => { 
+            if (e.touches.length === 1) {
+                dragControl.isDragging = true; 
+                dragControl.isPinching = false;
+                dragControl.prevX = e.touches[0].clientX; 
+                dragControl.prevY = e.touches[0].clientY; 
+            } else if (e.touches.length === 2) {
+                dragControl.isDragging = false;
+                dragControl.isPinching = true;
+                dragControl.pinchDist = getPinchDistance(e.touches);
+            }
+        }, { passive: false });
+
         container.addEventListener('touchmove', (e) => {
-            if (!dragControl.isDragging || e.touches.length === 0) return;
-            const deltaX = e.touches[0].clientX - dragControl.prevX; const deltaY = e.touches[0].clientY - dragControl.prevY;
-            dragControl.prevX = e.touches[0].clientX; dragControl.prevY = e.touches[0].clientY;
-            dragControl.targetX = Math.max(-100, Math.min(100, dragControl.targetX + deltaX * 0.1));
-            dragControl.targetY = Math.max(-100, Math.min(100, dragControl.targetY - deltaY * 0.1));
+            if (e.touches.length === 1 && dragControl.isDragging) {
+                const deltaX = e.touches[0].clientX - dragControl.prevX; 
+                const deltaY = e.touches[0].clientY - dragControl.prevY;
+                dragControl.prevX = e.touches[0].clientX; 
+                dragControl.prevY = e.touches[0].clientY;
+                dragControl.targetX = Math.max(-100, Math.min(100, dragControl.targetX + deltaX * 0.1));
+                dragControl.targetY = Math.max(-100, Math.min(100, dragControl.targetY - deltaY * 0.1));
+            } else if (e.touches.length === 2 && dragControl.isPinching) {
+                e.preventDefault(); // 阻止瀏覽器預設的雙指縮放畫面行為
+                const newDist = getPinchDistance(e.touches);
+                const deltaDist = newDist - dragControl.pinchDist;
+                dragControl.pinchDist = newDist;
+                
+                // 將雙指開合距離映射到當前鎖定的目標數值上
+                let target = state.activeControl || 'scale';
+                let change = deltaDist * 0.01;
+
+                switch(target) {
+                    case 'scale': state.vScale = Math.max(0.1, Math.min(5.0, state.vScale + change)); showStatus(`大小: ${Math.round(state.vScale * 100)}%`); break;
+                    case 'rotation': state.vRotation = Math.max(0.0, Math.min(5.0, state.vRotation + change)); showStatus(`旋轉速度: ${Math.round(state.vRotation * 100)}%`); break;
+                    case 'color': state.vColorSpeed = Math.max(0.0, Math.min(5.0, state.vColorSpeed + change)); showStatus(`變色速度: ${Math.round(state.vColorSpeed * 100)}%`); break;
+                    case 'density': state.vDensity = Math.max(0.1, Math.min(3.0, state.vDensity + change * 0.5)); showStatus(`數量多寡: ${Math.round(state.vDensity * 100)}%`); break;
+                    case 'bpm': state.bpm = Math.max(40, Math.min(300, state.bpm + change * 20)); showStatus(`模擬速度: ${Math.round(state.bpm)} BPM`); break;
+                }
+                syncFXPanel();
+            }
+        }, { passive: false });
+
+        container.addEventListener('touchend', (e) => { 
+            if (e.touches.length < 2) dragControl.isPinching = false;
+            if (e.touches.length === 0) dragControl.isDragging = false;
+            if (e.touches.length === 1) {
+                // 如果放開一根手指，無縫轉換回單指平移模式
+                dragControl.isDragging = true;
+                dragControl.prevX = e.touches[0].clientX;
+                dragControl.prevY = e.touches[0].clientY;
+            }
         });
-        container.addEventListener('touchend', () => dragControl.isDragging = false);
 
         function switchScene(sceneIndex) {
             state.currentScene = sceneIndex;
@@ -1420,7 +1562,8 @@
             if (!file || !file.type.startsWith('audio/')) return showStatus('請上傳有效的音訊檔案');
             
             if (state.isMicMode) stopAudio(); 
-            if (state.isPlaying || (state.audioContext && state.audioContext.state === 'suspended')) stopAudio(); 
+            initAudioContext();
+            if (state.isPlaying) stopAudio(); 
             
             state.currentProgress = 0;
             showStatus('音訊解碼中，大檔案可能需要數秒...');
@@ -1428,9 +1571,6 @@
             
             try {
                 const arrayBuffer = await file.arrayBuffer();
-                if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                if (state.audioContext.state === 'suspended') await state.audioContext.resume();
-
                 state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
                 state.audioDuration = state.audioBuffer.duration;
                 
@@ -1493,15 +1633,46 @@
 
         window.addEventListener('dragover', (e) => { e.preventDefault(); ui.dropZone.classList.remove('hidden'); });
         window.addEventListener('dragleave', (e) => { if(e.clientX === 0 && e.clientY === 0) ui.dropZone.classList.add('hidden'); });
-        window.addEventListener('drop', (e) => { 
+        
+        // 【優化】支援多檔案同時拖曳與文字檔讀取
+        window.addEventListener('drop', async (e) => { 
             e.preventDefault(); ui.dropZone.classList.add('hidden'); 
             if (e.dataTransfer.files.length) {
-                const file = e.dataTransfer.files[0];
-                if (file.type.startsWith('audio/')) handleAudioFile(file);
-                else if (file.type.startsWith('image/') || file.type.startsWith('video/')) handleBgFile(file);
-                else showStatus('不支援的檔案格式，請拖曳 MP3 或圖片/影片');
+                let processedAudio = false;
+                let processedBg = false;
+                let processedText = false;
+                
+                for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    const file = e.dataTransfer.files[i];
+                    
+                    if (file.type.startsWith('audio/') && !processedAudio) {
+                        handleAudioFile(file);
+                        processedAudio = true;
+                    } 
+                    else if ((file.type.startsWith('image/') || file.type.startsWith('video/')) && !processedBg) {
+                        handleBgFile(file);
+                        processedBg = true;
+                    } 
+                    else if ((file.type.startsWith('text/') || file.name.endsWith('.lrc') || file.name.endsWith('.txt')) && !processedText) {
+                        try {
+                            const text = await file.text();
+                            ui.lyricsInput.value = text;
+                            parseLyrics(text);
+                            processedText = true;
+                        } catch (err) {
+                            console.error("歌詞讀取失敗:", err);
+                        }
+                    }
+                }
+                
+                if (!processedAudio && !processedBg && !processedText) {
+                    showStatus('不支援的檔案格式，請拖曳 MP3、圖片/影片或 .txt/.lrc 文字檔');
+                } else if (e.dataTransfer.files.length > 1) {
+                    showStatus('✨ 多個檔案已成功批次載入！');
+                }
             } 
         });
+        
         ui.closeDropZone.addEventListener('click', () => ui.dropZone.classList.add('hidden'));
 
         ui.micBtn.addEventListener('click', () => { if (state.isMicMode) stopAudio(); else ui.audioSourceModal.classList.remove('hidden'); });
@@ -1509,7 +1680,8 @@
 
         async function startLiveAudio(sourceType) {
             ui.audioSourceModal.classList.add('hidden');
-            if (state.isPlaying || (state.audioContext && state.audioContext.state === 'suspended')) stopAudio(); 
+            initAudioContext();
+            if (state.isPlaying) stopAudio(); 
             
             try {
                 let stream;
@@ -1521,15 +1693,11 @@
                 }
 
                 state.micStream = stream;
-                if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                if (state.audioContext.state === 'suspended') await state.audioContext.resume();
-
                 state.source = state.audioContext.createMediaStreamSource(stream);
                 
-                // 確保分析器存在
                 if (!state.analyser) {
                     state.analyser = state.audioContext.createAnalyser();
-                    state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; // 終極優化：降低平滑度，讓聲音反應更即時
+                    state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; 
                     state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
                     if (state.audioContext.createMediaStreamDestination) {
                         state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
@@ -1540,14 +1708,12 @@
                     state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize);
                 }
 
-                // 清除舊連線，確保沒有 Feedback (無限回音)
                 state.analyser.disconnect();
                 state.tunerAnalyser.disconnect();
 
                 state.source.connect(state.analyser); 
                 state.source.connect(state.tunerAnalyser);
                 
-                // 【修正3】現場收音模式下，絕不連線至喇叭 (audioContext.destination)！直接將 source 連線至錄影目的地
                 if(state.mediaStreamDestination) state.source.connect(state.mediaStreamDestination);
                 
                 state.isMicMode = true; state.isPlaying = true;
@@ -1573,10 +1739,10 @@
         ui.btnMicSource.addEventListener('click', () => startLiveAudio('mic'));
         ui.btnSystemSource.addEventListener('click', () => startLiveAudio('system'));
 
-        // 重構音訊路由，確保 MP3 永遠有聲音
         function playAudio(offset = 0) {
             if (!state.audioBuffer && !state.isMicMode) return showStatus('請先載入 MP3 音訊');
             if (state.isMicMode) stopAudio(); 
+            initAudioContext();
             
             if (state.source) { state.source.onended = null; state.source.stop(); state.source.disconnect(); }
             
@@ -1585,7 +1751,7 @@
             
             if (!state.analyser) {
                 state.analyser = state.audioContext.createAnalyser(); 
-                state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; // 終極優化：降低平滑度，找回爆發力
+                state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4;
                 state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
                 if (state.audioContext.createMediaStreamDestination) {
                     state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
@@ -1618,11 +1784,26 @@
             state.source.onended = () => { stopAudio(); if(state.isRecording) stopRecording(); };
         }
 
-        function seekAudio(percent) {
+        async function seekAudio(percent) {
             if (!state.audioBuffer || state.isMicMode) return;
+            
+            // 【優化】記錄使用者拖曳進度條之前的狀態
+            const wasPlaying = state.isPlaying;
             const targetTime = (percent / 100) * state.audioDuration;
-            if (state.audioContext && state.audioContext.state === 'suspended') state.audioContext.resume();
+            
+            initAudioContext();
             playAudio(targetTime);
+            
+            // 【優化】如果原本是暫停的，切換進度後立刻再次凍結音訊並恢復 UI 狀態
+            if (!wasPlaying) {
+                state.isPlaying = false;
+                if (state.audioContext && state.audioContext.state === 'running') {
+                    await state.audioContext.suspend();
+                }
+                ui.playIcon.classList.remove('hidden'); 
+                ui.pauseIcon.classList.add('hidden'); 
+                ui.playText.textContent = '繼續播放';
+            }
             
             if (state.isLrcMode) {
                 let activeIdx = -1;
@@ -1644,9 +1825,7 @@
         });
 
         ui.playBtn.addEventListener('click', async () => {
-            if (state.audioContext && state.audioContext.state === 'suspended') {
-                await state.audioContext.resume();
-            }
+            initAudioContext();
             if (!state.source && !state.isMicMode) {
                 if(state.metroIsPlaying) return showStatus('目前僅運作節拍器模式'); playAudio(0);
             } else {
@@ -1683,6 +1862,11 @@
         }
 
         window.addEventListener('keydown', (e) => {
+            // 【優化】優先處理全局 Esc 退出邏輯
+            if (e.key === 'Escape') {
+                if (handleEscape()) return; // 攔截到關閉動作則終止往下執行
+            }
+
             if (document.activeElement === ui.lyricsInput || document.activeElement.tagName === 'INPUT') return;
 
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
@@ -1703,6 +1887,7 @@
             }
 
             switch(e.code) {
+                case 'Enter': e.preventDefault(); setUICollapseState(!isUICollapsed); break;
                 case 'KeyC': e.preventDefault(); state.isAutoMode = !state.isAutoMode; showStatus(state.isAutoMode ? '自動模式開啟' : '手動模式開啟'); syncFXPanel(); break;
                 case 'Space': e.preventDefault(); ui.playBtn.click(); break;
                 case 'KeyQ': e.preventDefault(); state.vScale = Math.min(5.0, state.vScale + 0.1); showStatus(`大小: ${Math.round(state.vScale * 100)}%`); syncFXPanel(); break;
@@ -1753,8 +1938,6 @@
                 state.analyser.getByteFrequencyData(state.dataArray);
                 const length = state.dataArray.length, sampleRate = state.audioContext ? state.audioContext.sampleRate : 44100, binSize = (sampleRate / 2) / length; 
                 
-                // 【終極優化 1：捨棄平均值，改抓「峰值(Peak)」】
-                // 將頻率拆分，抓取該區段的「最大值」，才不會被其他靜音頻率稀釋掉大鼓的力道
                 let bassPeak = 0, midPeak = 0, treblePeak = 0, volumeSum = 0;
 
                 for(let i=0; i<length; i++) {
@@ -1762,14 +1945,11 @@
                     const value = state.dataArray[i]; 
                     volumeSum += value;
                     
-                    // 重低音區間縮小到 250Hz，且只抓最大峰值，確保大鼓拍點精準爆發
                     if (freq <= 250) { bassPeak = Math.max(bassPeak, value); } 
                     else if (freq > 250 && freq <= 2000) { midPeak = Math.max(midPeak, value); } 
                     else { treblePeak = Math.max(treblePeak, value); }
                 }
                 
-                // 【終極優化 2：動態區間與指數映射】
-                // 音樂訊號極少達到 255。我們把 20~180 映射為 0~1，再套用 2.5 次方，創造出真正的「視覺核爆」
                 const processPeak = (val) => Math.pow(Math.max(0, Math.min(1, (val - 20) / 160)), 2.5);
 
                 bass = processPeak(bassPeak); 
@@ -1780,7 +1960,6 @@
 
             if (state.sBass === undefined) { state.sBass = 0; state.sMid = 0; state.sTreble = 0; state.sVol = 0; }
             
-            // 瞬間變大，稍微加速縮小，創造重量感
             const attack = 0.9;  
             const release = 0.12; 
             state.sBass += (bass > state.sBass ? attack : release) * (bass - state.sBass);
@@ -1795,7 +1974,7 @@
                 if (state.bassHistory.length > 0) localAvgBass = state.bassHistory.reduce((a, b) => a + b, 0) / state.bassHistory.length;
                 if (state.bassHitTimer > 0) state.bassHitTimer--;
                 
-                const isBeat = bass > localAvgBass * 1.15 && bass > 0.1; // 極度敏感的重拍偵測
+                const isBeat = bass > localAvgBass * 1.15 && bass > 0.1; 
 
                 if (isBeat) {
                     if (bass > 0.2 && state.cameraShake < 1) {
@@ -1826,7 +2005,6 @@
 
             masterGroup.position.x += (dragControl.targetX - masterGroup.position.x) * 0.1; masterGroup.position.y += (dragControl.targetY - masterGroup.position.y) * 0.1;
 
-            // 【終極優化 3：聚焦活躍頻率】捨棄高段靜音頻率，將陣列映射鎖定在 0~120 活躍區間
             const getExaggeratedVal = (rawVal) => state.isPlaying ? Math.pow(Math.max(0, Math.min(1, (rawVal - 15) / 160)), 2.5) : 0;
             const vBass = (state.sBass || 0) * s, hue = state.hueOffset % 1.0, invHue = (state.hueOffset + 0.5) % 1.0;
 
@@ -1836,9 +2014,50 @@
                     particlesMesh.scale.setScalar(1 + vBass * 2.5); particlesMaterial.color.setHSL(hue, 0.8, 0.6); particlesGeometry.setDrawRange(0, Math.floor(18000 * d));
                     break;
                 case 1:
-                    icosahedronMesh.rotation.x += 0.01 * r; icosahedronMesh.rotation.y += 0.01 * r;
-                    icosahedronMesh.scale.lerp(new THREE.Vector3(1 + vBass * 4, 1 + vBass * 4, 1 + vBass * 4).multiplyScalar(s), 0.3);
-                    icosahedronMaterial.emissive.setHSL(hue, 1.0, Math.min(1, vBass * 1.0)); icosahedronMaterial.color.setHSL(invHue, 0.8, 0.5);
+                    // 實體核心旋轉與縮放 (受 Bass 重低音強烈影響)
+                    geoCoreMesh.rotation.x += 0.01 * r; geoCoreMesh.rotation.y += 0.015 * r;
+                    const coreScale = (1 + vBass * 3.5) * s;
+                    geoCoreMesh.scale.setScalar(geoCoreMesh.scale.x + (coreScale - geoCoreMesh.scale.x) * 0.3);
+                    geoCoreMat.emissive.setHSL(hue, 1.0, 0.3 + vBass * 0.7);
+
+                    // 中層線框反向旋轉 (受 Mid 中音影響)
+                    geoMidMesh.rotation.x -= 0.012 * r; geoMidMesh.rotation.y += 0.008 * r;
+                    const midScale = (1 + (state.sMid || 0) * 2.0) * s;
+                    geoMidMesh.scale.setScalar(geoMidMesh.scale.x + (midScale - geoMidMesh.scale.x) * 0.2);
+                    geoMidMat.color.setHSL(invHue, 0.8, 0.5);
+                    geoMidMat.emissiveIntensity = vBass * 3.0;
+
+                    // 外層線框緩慢旋轉
+                    geoOuterMesh.rotation.x += 0.005 * r; geoOuterMesh.rotation.z -= 0.005 * r;
+                    const outerScale = (1 + (state.sTreble || 0) * 1.5) * s;
+                    geoOuterMesh.scale.setScalar(geoOuterMesh.scale.x + (outerScale - geoOuterMesh.scale.x) * 0.1);
+                    geoOuterMat.color.setHSL((hue + 0.3) % 1.0, 0.8, 0.5);
+                    geoOuterMat.opacity = 0.15 + vBass * 0.4;
+
+                    // 漂浮碎片星系動態
+                    const maxDebris = Math.floor(80 * d);
+                    geoDebrisList.forEach((debris, i) => {
+                        debris.visible = i < maxDebris;
+                        if(!debris.visible) return;
+                        const dataVal = getExaggeratedVal(state.dataArray[(i * 3) % 120]);
+                        
+                        // 自轉
+                        debris.rotation.x += debris.userData.rx * r;
+                        debris.rotation.y += debris.userData.ry * r;
+                        
+                        // 隨著重低音向外爆發
+                        const targetDist = debris.userData.baseDist * (1 + vBass * 0.7) * s;
+                        const currentDist = debris.position.length();
+                        const nextDist = currentDist + (targetDist - currentDist) * 0.2;
+                        if (nextDist > 0.01) debris.position.setLength(nextDist);
+                        
+                        // 體積與顏色脈動
+                        debris.scale.setScalar(s * (0.5 + dataVal * 3.0));
+                        debris.material.color.setHSL((hue + i*0.01) % 1.0, 1.0, 0.5 + dataVal*0.5);
+                        if(!debris.material.wireframe) {
+                            debris.material.emissive.setHSL(invHue, 1.0, dataVal);
+                        }
+                    });
                     break;
                 case 2:
                     groups[2].rotation.z += (0.01 + (treble * 0.08)) * r;
@@ -1886,14 +2105,43 @@
                     });
                     break;
                 case 6:
-                    groups[6].rotation.y += (0.02 + (mid * 0.2)) * r; groups[6].rotation.z = Math.sin(timeSec * 2 * r) * 0.3;
-                    const maxSpheres = 360 * d;
-                    helixSpheres.forEach((sphere, i) => {
-                        sphere.visible = i < maxSpheres; if(!sphere.visible) return;
+                    groups[6].rotation.y += (0.01 + (mid * 0.1)) * r;
+                    groups[6].rotation.z = Math.sin(timeSec * r) * 0.2;
+                    groups[6].rotation.x = Math.cos(timeSec * 0.5 * r) * 0.1;
+                    
+                    // 能量柱脈衝
+                    const pillar = groups[6].children[0];
+                    pillar.material.color.setHSL((hue + 0.5) % 1.0, 1.0, 0.5);
+                    pillar.material.opacity = 0.05 + (bass * 0.25);
+                    pillar.scale.setScalar((1 + bass * 0.5) * s);
+
+                    const maxHelices = Math.floor(360 * d);
+                    const strandOffset = (Math.PI * 2) / 3;
+                    
+                    helixSpheres.forEach((sphere, idx) => {
+                        const i = sphere.userData.index;
+                        sphere.visible = i < maxHelices;
+                        if(!sphere.visible) return;
+
                         const dataVal = getExaggeratedVal(state.dataArray[i % 120]);
-                        const targetS = (1 + dataVal * 5.0) * s;
-                        sphere.scale.setScalar(sphere.scale.x + (targetS - sphere.scale.x) * 0.4);
-                        sphere.material.color.setHSL(hue, 1.0, 0.4 + dataVal*0.6);
+                        const strand = sphere.userData.strand;
+
+                        // 呼吸路徑計算
+                        const y = ((i % 120) - 60) * 1.0 * s; 
+                        const angle = (i * 0.15) + (timeSec * 1.5 * r) + (strand * strandOffset);
+                        const radiusBreathe = Math.sin(timeSec * 2 + y * 0.1) * 2;
+                        const radius = (12 + radiusBreathe + (dataVal * 6)) * s;
+
+                        sphere.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+
+                        // 隨節奏放大的粒子
+                        const targetS = (0.5 + dataVal * 4.0 + (bass * 1.5)) * s;
+                        sphere.scale.setScalar(sphere.scale.x + (targetS - sphere.scale.x) * 0.3);
+
+                        // 流水漸層色
+                        const localHue = (hue + (i * 0.005) + (strand * 0.15)) % 1.0;
+                        sphere.material.color.setHSL(localHue, 1.0, 0.5);
+                        sphere.material.emissive.setHSL(localHue, 1.0, dataVal * 1.5);
                     });
                     break;
                 case 7:
@@ -2041,29 +2289,35 @@
             renderer.clearDepth(); 
             renderer.render(lyricsScene, camera); 
             
-            // 【極速導出核心】在錄影模式下，將畫面繪製到「符合目標解析度」的隱藏 GPU 畫布上
+            // 【效能優化 1：節流閥】控制錄影畫面的更新率，防止 144Hz 螢幕榨乾 CPU 導致音訊中斷
             if (state.isRecording && state.recordCtx) {
-                const sw = renderer.domElement.width;
-                const sh = renderer.domElement.height;
-                const tw = state.recordCanvas.width;
-                const th = state.recordCanvas.height;
+                const now = performance.now();
+                const frameInterval = 1000 / state.recordTargetFps;
                 
-                const sRatio = sw / sh;
-                const tRatio = tw / th;
-                let cropW = sw, cropH = sh, cropX = 0, cropY = 0;
+                if (now - state.lastRecordFrameTime >= frameInterval) {
+                    state.lastRecordFrameTime = now - ((now - state.lastRecordFrameTime) % frameInterval);
 
-                // Object-fit: cover 的數學演算法，保持畫面比例不變形
-                if (sRatio > tRatio) {
-                    cropW = sh * tRatio;
-                    cropX = (sw - cropW) / 2;
-                } else {
-                    cropH = sw / tRatio;
-                    cropY = (sh - cropH) / 2;
+                    const sw = renderer.domElement.width;
+                    const sh = renderer.domElement.height;
+                    const tw = state.recordCanvas.width;
+                    const th = state.recordCanvas.height;
+                    
+                    const sRatio = sw / sh;
+                    const tRatio = tw / th;
+                    let cropW = sw, cropH = sh, cropX = 0, cropY = 0;
+
+                    if (sRatio > tRatio) {
+                        cropW = sh * tRatio;
+                        cropX = (sw - cropW) / 2;
+                    } else {
+                        cropH = sw / tRatio;
+                        cropY = (sh - cropH) / 2;
+                    }
+
+                    state.recordCtx.fillStyle = 'black';
+                    state.recordCtx.fillRect(0, 0, tw, th);
+                    state.recordCtx.drawImage(renderer.domElement, cropX, cropY, cropW, cropH, 0, 0, tw, th);
                 }
-
-                state.recordCtx.fillStyle = 'black';
-                state.recordCtx.fillRect(0, 0, tw, th);
-                state.recordCtx.drawImage(renderer.domElement, cropX, cropY, cropW, cropH, 0, 0, tw, th);
             }
         }
         animate();
@@ -2073,12 +2327,11 @@
         // ==========================================
         let mediaRecorder, recordedChunks = [], ffmpeg = null;
 
-        // 取得瀏覽器支援的最高效編碼格式 (優先選擇 H.264 以支援 FFmpeg 秒換 MP4)
         function getBestMimeType() {
             const types = [
-                'video/mp4;codecs=avc1', // Safari 或新版 Chrome 原生支援
+                'video/mp4;codecs=avc1', 
                 'video/mp4',
-                'video/webm;codecs=h264', // Chrome/Edge 高速支援 (可秒換殼)
+                'video/webm;codecs=h264', 
                 'video/webm;codecs=vp9',
                 'video/webm'
             ];
@@ -2089,15 +2342,27 @@
         }
 
         async function startRecording() {
-            if(!state.isPlaying) ui.playBtn.click(); 
+            // 【流程優化】阻擋未連線的麥克風錄製
+            if (state.isMicMode && !state.isPlaying) {
+                return showStatus('請先啟動現場收音再開始錄製');
+            }
+
+            // 【流程優化】記錄當前播放狀態與進度。不要在這裡提早觸發播放，避免漏掉開頭的聲音！
+            const wasPlaying = state.isPlaying;
+            let currentOffset = 0;
+            if (!state.isMicMode && state.audioBuffer) {
+                currentOffset = (ui.progressSlider.value / 100) * state.audioDuration || 0;
+            }
+            
             recordedChunks = [];
             
             const quality = document.getElementById('export-quality').value; 
             const ratio = document.getElementById('export-ratio').value;
             const isFast = quality === 'fast';
             const fps = isFast ? 30 : 60;
+            state.recordTargetFps = fps; 
+            state.lastRecordFrameTime = performance.now();
             
-            // 【極速導出核心】預先建立與目標尺寸一模一樣的隱藏畫布，免除事後軟體縮放
             state.recordCanvas = document.createElement('canvas');
             const baseRes = isFast ? 720 : 1080;
             let W, H;
@@ -2110,7 +2375,6 @@
                 else { W = baseRes; H = Math.round(baseRes / ar); }
             }
 
-            // H.264 影片尺寸必須是偶數
             W = Math.floor(W / 2) * 2;
             H = Math.floor(H / 2) * 2;
 
@@ -2118,7 +2382,6 @@
             state.recordCanvas.height = H;
             state.recordCtx = state.recordCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
 
-            // 從隱藏的、已縮放完成的畫布擷取串流
             const canvasStream = state.recordCanvas.captureStream(fps); 
             const tracks = [...canvasStream.getTracks()];
             state.hasAudioTrack = false;
@@ -2141,7 +2404,9 @@
             mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunks.push(event.data); };
             mediaRecorder.onstop = async () => { await processVideo(); };
 
-            mediaRecorder.start(1000); state.isRecording = true; showStatus('錄製中...');
+            // 【效能優化 3】拉長切片封裝間隔為 3 秒 (原本 1 秒)，減少切片時對記憶體的衝擊造成的卡頓
+            mediaRecorder.start(3000); 
+            state.isRecording = true; showStatus('錄製中...');
             ui.recordInner.classList.remove('rounded-full', 'w-4', 'h-4'); ui.recordInner.classList.add('rounded-sm', 'w-6', 'h-6'); ui.recordCircle.classList.add('animate-pulse');
             
             const btnTextSpan = ui.recordText.querySelector('span:first-child'); btnTextSpan.textContent = '停止錄製';
@@ -2152,7 +2417,6 @@
                 if (elapsed >= state.maxRecordTimeMs) { stopRecording(); showStatus('已達最大錄製時間 (60分鐘)，系統自動停止以保護記憶體，準備開始導出。', 6000); return; }
                 const secs = Math.floor((elapsed / 1000) % 60).toString().padStart(2, '0'); const mins = Math.floor(elapsed / 60000).toString().padStart(2, '0');
                 
-                // 支援超過 60 分鐘時的小時顯示，雖然預設鎖定 60 分鐘
                 let displayTime = `${mins}:${secs}`;
                 if (mins >= 60) {
                     const hrs = Math.floor(mins / 60);
@@ -2162,6 +2426,13 @@
                 
                 timerEl.textContent = `${displayTime} / 60:00`;
             }, 1000);
+
+            // 【流程優化】錄影引擎完全就緒後，如果原本是暫停狀態，才自動開始播放，達到完美無縫影音同步
+            if (!state.isMicMode && state.audioBuffer && !wasPlaying) {
+                setTimeout(() => {
+                    playAudio(currentOffset);
+                }, 100); // 給予 100ms 緩衝確保錄影器第一幀已建立完成
+            }
         }
 
         function stopRecording() {
@@ -2196,7 +2467,6 @@
                 showStatus(`⚡ 極速原檔 (${ext}) 導出完成！`); return; 
             }
 
-            // 【極速導出核心】方案 A：如果瀏覽器原生就是 MP4，一秒都不用等，直接下載！
             if (mimeType.includes('mp4')) {
                 showStatus('⚡ 偵測到原生 MP4 支援，極速導出成功！');
                 downloadBlob(videoBlob, 'visualizer_pro.mp4'); return;
@@ -2237,16 +2507,13 @@
                 
                 ui.progressContainer.classList.remove('hidden'); ui.progressContainer.classList.add('flex');
                 
-                // 檢查是否是 H.264 的 WebM，這是我們觸發秒換技術的關鍵
                 const isH264 = mimeType.includes('h264');
                 const ffmpegArgs = ['-i', inputName];
 
                 if (isH264) {
-                    // 【極速導出核心】方案 B：容器秒換技術 (Stream Copy)。完全不重新運算畫面，速度快 100 倍！
                     ffmpegArgs.push('-c:v', 'copy');
                     ui.loadingText.textContent = '偵測到 H.264 編碼，執行極速封裝 (無需重轉畫面)...';
                 } else {
-                    // 方案 C：如果瀏覽器太舊只支援 VP8/VP9，還是得轉碼，但因為已經沒有外部縮放負擔，速度依然大幅提升。
                     ffmpegArgs.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', isFast ? '28' : '23', '-pix_fmt', 'yuv420p');
                     ui.loadingText.textContent = '正在進行高效轉碼 (由於瀏覽器不支援 H.264，此步驟較耗時)...';
                 }
@@ -2276,5 +2543,10 @@
             document.body.appendChild(a); a.click(); setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
         }
     </script>
+    <footer class="container mx-auto px-4">
+        <div class="border-t border-gray-700 mt-16 py-8 text-gray-400 text-sm text-center">
+            <p>免責聲明：本網頁所提供之內容僅供參考，不代表任何正式立場。對於因使用本網頁資訊而引發的任何損失或損害，本站概不負責。</p>
+        </div>
+    </footer>
 </body>
 </html>
