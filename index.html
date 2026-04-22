@@ -441,6 +441,7 @@
     </div>
 
     <!-- 導出處理遮罩 -->
+
     <div id="loading-overlay" class="fixed inset-0 bg-black/80 z-[200] hidden flex-col items-center justify-center backdrop-blur-sm">
         <svg class="animate-spin -ml-1 mr-3 h-12 w-12 text-purple-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -450,363 +451,60 @@
         <p id="loading-text" class="text-gray-400 text-sm mb-6">利用 WebCodecs 技術 100% 前端處理，請稍候。</p>
     </div>
 
-    <script>
-        // ==========================================
-        // 1. 核心狀態管理 (WebCodecs 升級版)
-        // ==========================================
-        const state = {
-            audioContext: null,
-            analyser: null,
-            source: null,
-            audioBuffer: null,
-            dataArray: new Uint8Array(512), 
-            isPlaying: false,
-            
-            isRecording: false,
-            muxer: null,
-            videoEncoder: null,
-            audioEncoder: null,
-            audioTrackProcessor: null,
-            audioReader: null,
-            recordCanvas: null,
-            recordCtx: null,
-            recordTargetFps: 30,
-            recordedFrames: 0,
-            recordingStartTime: 0,
-            recordingStartTimeReal: 0,
-            maxRecordTimeMs: 60 * 60 * 1000, 
-            recordingInterval: null,
-            hasAudioTrack: false,
+    <script type="module">
+        import sceneFactory from "./src/scripts/sceneFactory.js";
+        import { state, ui, initUI } from "./src/scripts/store.js";
+        import { setupAudioManager } from "./src/scripts/audioManager.js";
+        import { setupVideoExport } from "./src/scripts/videoExport.js";
+        import { setupLyricsParser } from "./src/scripts/lyricsParser.js";
+        import { setupUIControls } from "./src/scripts/uiController.js";
+        
+        initUI();
 
-            currentScene: 0,
-            bassHitTimer: 0,
-            hueOffset: 0,
-            isAutoMode: true,
-            
-            vScale: 1.0,
-            vRotation: 1.0,
-            vColorSpeed: 1.0,
-            vDensity: 1.0,
-            bpm: 120,
-            
-            isMicMode: false,
-            micStream: null,
-            
-            audioStartTime: 0,
-            audioDuration: 0,
-            currentProgress: 0,
-            
-            parsedLyrics: null,
-            textDirty: false,
-            
-            lrcLines: [],        
-            isLrcMode: false,    
-            lrcScrollY: 0,       
-            targetLrcScrollY: 0, 
-            
-            lrcColor: '#ffffff',
-            isLrcAutoColor: true,
-            lrcBgColor: '#000000',
-            lrcBgOpacity: 0.65,
-            isLrcBgAutoColor: true,
-            plainTextStartY: 0,
-            plainTextHeight: 0,
-            
-            activeControl: null,
-            bassHistory: [], 
-            flashIntensity: 0, 
-            cameraShake: 0,
-            
-            cameraOrbitAngle: 0,
-            cameraOrbitSpeed: 0.005,
-            targetFov: 75,
-            baseFov: 75,
-            bgVideoElement: null,
+        // Initialize modules in order of dependencies
+        let _stopRecording = null;
+        let _playAudio = null;
+        let _parseLyrics = null;
+        let _switchScene = null;
+        let _startLiveAudio = null;
+        let _initAudioContext = null;
+        let _stopAudio = null;
 
-            lastRenderActiveIdx: -1,
-            lastRenderLrcScrollY: -999,
-            lastRenderPopScale: -1,
-            isPureTextDrawn: false,
-            textTextureRatio: 1.0,
-            
-            overlayTimer: null, 
-            isDraggingProgress: false,
-            
-            // 【新增】記錄上一幀的真實時間，用於 VFR 實時對齊
-            lastRecordFrameTime: 0,
-            
-            metroIsPlaying: false,
-            metroBpm: 120,
-            metroBeatsPerBar: 4,
-            metroCurrentBeat: 0,
-            metroNextNoteTime: 0.0,
-            metroTimerID: null,
-            metroLookahead: 25.0, 
-            scheduleAheadTime: 0.1, 
-            metroVolume: 0.8,
-
-            tunerIsActive: false,
-            tunerAnalyser: null,
-            tunerTimeDomainData: null
-        };
-
-        const sceneNames = [
-            '深空星塵', '幾何脈動', '音軌隧道', '頻譜光環', '音浪地形',
-            '放射光芒', '霓虹螺旋', '方塊矩陣', '星際陀螺儀', '星爆射線',
-            '扭曲空間', '粒子漩渦', '全息光碟', '數位聲帶', '浮動音柱環', '能量水晶'
-        ];
-
-        const ui = {
-            upload: document.getElementById('audio-upload'),
-            removeAudioBtn: document.getElementById('remove-audio-btn'),
-            audioLabelText: document.getElementById('audio-label-text'),
-            bgUpload: document.getElementById('bg-upload'),
-            removeBgBtn: document.getElementById('remove-bg-btn'),
-            playBtn: document.getElementById('play-btn'),
-            playIcon: document.getElementById('play-icon'),
-            pauseIcon: document.getElementById('pause-icon'),
-            playText: document.getElementById('play-text'),
-            recordBtn: document.getElementById('record-btn'),
-            recordCircle: document.getElementById('record-circle'),
-            recordInner: document.getElementById('record-inner'),
-            recordText: document.getElementById('record-text'),
-            statusBox: document.getElementById('status-box'),
-            titleContainer: document.getElementById('title-container'), 
-            instructionsContainer: document.getElementById('instructions-container'), 
-            lyricsContainer: document.getElementById('lyrics-container'), 
-            loadingOverlay: document.getElementById('loading-overlay'),
-            loadingText: document.getElementById('loading-text'),
-            lyricsInput: document.getElementById('lyrics-input'),
-            dropZone: document.getElementById('drop-zone'),
-            closeDropZone: document.getElementById('close-drop-zone'),
-            micBtn: document.getElementById('mic-btn'),
-            
-            mainHeader: document.getElementById('main-header'), 
-            footerContainer: document.getElementById('footer-container'),
-            mainToolbar: document.getElementById('main-toolbar'),
-            toggleUiBtn: document.getElementById('toggle-ui-btn'),
-            toggleUiIcon: document.getElementById('toggle-ui-icon'),
-            
-            progressWrapper: document.getElementById('progress-wrapper'),
-            progressSlider: document.getElementById('progress-slider'),
-            timeCurrent: document.getElementById('time-current'),
-            timeTotal: document.getElementById('time-total'),
-
-            audioSourceModal: document.getElementById('audio-source-modal'),
-            closeAudioModal: document.getElementById('close-audio-modal'),
-            btnMicSource: document.getElementById('btn-mic-source'),
-            btnSystemSource: document.getElementById('btn-system-source'),
-
-            fxModal: document.getElementById('fx-modal'),
-            closeFxModal: document.getElementById('close-fx-modal'),
-            fxBtn: document.getElementById('fx-btn'),
-
-            fullscreenBtn: document.getElementById('fullscreen-btn'),
-            iconFullscreenEnter: document.getElementById('icon-fullscreen-enter'),
-            iconFullscreenExit: document.getElementById('icon-fullscreen-exit'),
-            fullscreenText: document.getElementById('fullscreen-text'),
-            
-            playPauseOverlay: document.getElementById('play-pause-overlay'),
-            overlayIconPlay: document.getElementById('overlay-icon-play'),
-            overlayIconPause: document.getElementById('overlay-icon-pause'),
-
-            metroModal: document.getElementById('metro-modal'),
-            closeMetroModal: document.getElementById('close-metro-modal'),
-            openMetroBtn: document.getElementById('open-metro-btn'),
-            metroSliderBpm: document.getElementById('metro-slider-bpm'),
-            metroInputBpm: document.getElementById('metro-input-bpm'),
-            metroBtnMinus: document.getElementById('metro-btn-minus'), 
-            metroBtnPlus: document.getElementById('metro-btn-plus'),   
-            metroSelectBeat: document.getElementById('metro-select-beat'),
-            metroSliderVol: document.getElementById('metro-slider-vol'),
-            metroToggleBtn: document.getElementById('metro-toggle-btn'),
-            metroLedContainer: document.getElementById('metro-led-container'),
-
-            tunerModal: document.getElementById('tuner-modal'),
-            closeTunerModal: document.getElementById('close-tuner-modal'),
-            openTunerBtn: document.getElementById('open-tuner-btn'),
-            tunerNote: document.getElementById('tuner-note'),
-            tunerOctave: document.getElementById('tuner-octave'),
-            tunerFreq: document.getElementById('tuner-freq'),
-            tunerIndicator: document.getElementById('tuner-indicator')
-        };
-
-        function handleEscape() {
-            let acted = false;
-            if (document.activeElement === ui.lyricsInput || document.activeElement.tagName === 'INPUT') {
-                document.activeElement.blur(); acted = true;
-            }
-            if (!ui.dropZone.classList.contains('hidden')) { ui.closeDropZone.click(); acted = true; }
-            if (!ui.audioSourceModal.classList.contains('hidden')) { ui.closeAudioModal.click(); acted = true; }
-            if (!ui.fxModal.classList.contains('hidden')) { ui.closeFxModal.click(); acted = true; }
-            if (!ui.tunerModal.classList.contains('hidden')) { ui.closeTunerModal.click(); acted = true; }
-            if (!ui.metroModal.classList.contains('hidden')) { ui.closeMetroModal.click(); acted = true; }
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
-                if (document.exitFullscreen) document.exitFullscreen();
-                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-                acted = true;
-            }
-            return acted;
-        }
-
-        // 【重要修復】無聲心跳機制：強制保持音訊線路活躍，根除 Apple 設備的 -12842 報錯
-        function initAudioContext(autoResume = true) {
-            if (!state.audioContext) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                try { state.audioContext = new AudioContextClass({ latencyHint: 'playback' }); } 
-                catch(e) { state.audioContext = new AudioContextClass(); }
-
-                state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
-
-                state.silenceOsc = state.audioContext.createOscillator();
-                state.silenceGain = state.audioContext.createGain();
-                state.silenceGain.gain.value = 0; 
-                state.silenceOsc.connect(state.silenceGain);
-                state.silenceGain.connect(state.mediaStreamDestination);
-                state.silenceOsc.start();
-            }
-            if (autoResume && state.audioContext.state === 'suspended') {
-                state.audioContext.resume();
-            }
-        }
-
-        let isUICollapsed = false;
-        let idleTimer = null;
-
-        function setUICollapseState(collapse) {
-            isUICollapsed = collapse;
-            if (collapse) {
-                ui.mainHeader.classList.add('-translate-y-[150%]', 'opacity-0');
-                ui.footerContainer.classList.add('translate-y-40'); 
-                ui.mainToolbar.classList.add('opacity-0', 'scale-90', 'pointer-events-none');
-                ui.toggleUiIcon.classList.add('rotate-180');
-                ui.toggleUiBtn.classList.add('bg-purple-600/80', 'border-purple-400');
-                ui.toggleUiBtn.classList.remove('bg-gray-900/80', 'border-white/20');
-            } else {
-                ui.mainHeader.classList.remove('-translate-y-[150%]', 'opacity-0');
-                ui.footerContainer.classList.remove('translate-y-40');
-                ui.mainToolbar.classList.remove('opacity-0', 'scale-90', 'pointer-events-none');
-                ui.toggleUiIcon.classList.remove('rotate-180');
-                ui.toggleUiBtn.classList.remove('bg-purple-600/80', 'border-purple-400');
-                ui.toggleUiBtn.classList.add('bg-gray-900/80', 'border-white/20');
-                wakeUI();
-            }
-        }
-
-        ui.toggleUiBtn.addEventListener('click', () => setUICollapseState(!isUICollapsed));
-
-        function wakeUI() {
-            if (isUICollapsed) return; 
-            ui.mainHeader.classList.remove('opacity-30');
-            ui.footerContainer.classList.remove('opacity-30');
-            document.body.style.cursor = 'default';
-            clearTimeout(idleTimer);
-            if (state.isPlaying) {
-                idleTimer = setTimeout(() => {
-                    ui.mainHeader.classList.add('opacity-30');
-                    ui.footerContainer.classList.add('opacity-30');
-                }, 2500); 
-            }
-        }
-
-        window.addEventListener('mousemove', wakeUI);
-        window.addEventListener('touchstart', wakeUI, { passive: true });
-        window.addEventListener('keydown', wakeUI);
-        window.addEventListener('click', wakeUI);
-
-        function showPlayPauseOverlay(isPlaying) {
-            if (isPlaying) {
-                ui.overlayIconPlay.classList.remove('hidden'); ui.overlayIconPause.classList.add('hidden');
-            } else {
-                ui.overlayIconPlay.classList.add('hidden'); ui.overlayIconPause.classList.remove('hidden');
-            }
-            ui.playPauseOverlay.classList.remove('opacity-0', 'scale-50');
-            ui.playPauseOverlay.classList.add('opacity-100', 'scale-100');
-            if (state.overlayTimer) clearTimeout(state.overlayTimer);
-            state.overlayTimer = setTimeout(() => {
-                ui.playPauseOverlay.classList.remove('opacity-100', 'scale-100');
-                ui.playPauseOverlay.classList.add('opacity-0', 'scale-50');
-            }, 800);
-        }
-
-        function unlockAudioContext() {
-            initAudioContext();
-            window.removeEventListener('click', unlockAudioContext, true);
-            window.removeEventListener('touchstart', unlockAudioContext, { passive: true, capture: true });
-        }
-        window.addEventListener('click', unlockAudioContext, true);
-        window.addEventListener('touchstart', unlockAudioContext, { passive: true, capture: true });
-
-        const slScale = document.getElementById('slider-scale');
-        const slRotation = document.getElementById('slider-rotation');
-        const slColor = document.getElementById('slider-color');
-        const slDensity = document.getElementById('slider-density');
-        const slBpm = document.getElementById('slider-bpm');
-        const chkAutoScene = document.getElementById('toggle-auto-scene');
-        const inputLrcColor = document.getElementById('input-lrc-color');
-        const chkLrcAutoColor = document.getElementById('toggle-lrc-auto-color');
-        const inputLrcBgColor = document.getElementById('input-lrc-bg-color');
-        const chkLrcBgAutoColor = document.getElementById('toggle-lrc-bg-auto-color');
-        const slLrcBgOpacity = document.getElementById('slider-lrc-bg-opacity');
-
-        function syncFXPanel() {
-            slScale.value = state.vScale; document.getElementById('val-scale').textContent = Math.round(state.vScale * 100) + '%';
-            slRotation.value = state.vRotation; document.getElementById('val-rotation').textContent = Math.round(state.vRotation * 100) + '%';
-            slColor.value = state.vColorSpeed; document.getElementById('val-color').textContent = Math.round(state.vColorSpeed * 100) + '%';
-            slDensity.value = state.vDensity; document.getElementById('val-density').textContent = Math.round(state.vDensity * 100) + '%';
-            slBpm.value = state.bpm; document.getElementById('val-bpm').textContent = state.bpm;
-            chkAutoScene.checked = state.isAutoMode;
-            
-            inputLrcColor.value = state.lrcColor;
-            chkLrcAutoColor.checked = state.isLrcAutoColor;
-            inputLrcColor.disabled = state.isLrcAutoColor;
-            inputLrcColor.style.opacity = state.isLrcAutoColor ? '0.4' : '1';
-            
-            inputLrcBgColor.value = state.lrcBgColor;
-            chkLrcBgAutoColor.checked = state.isLrcBgAutoColor;
-            inputLrcBgColor.disabled = state.isLrcBgAutoColor;
-            inputLrcBgColor.style.opacity = state.isLrcBgAutoColor ? '0.4' : '1';
-            
-            slLrcBgOpacity.value = Math.round(state.lrcBgOpacity * 100); document.getElementById('val-lrc-bg-opacity').textContent = Math.round(state.lrcBgOpacity * 100) + '%';
-        }
-        syncFXPanel();
-
-        ui.fxBtn.addEventListener('click', () => { syncFXPanel(); ui.fxModal.classList.remove('hidden'); });
-        ui.closeFxModal.addEventListener('click', () => ui.fxModal.classList.add('hidden'));
-
-        ui.fullscreenBtn.addEventListener('click', () => {
-            const docElm = document.documentElement;
-            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-            if (!isFullscreen) {
-                if (docElm.requestFullscreen) docElm.requestFullscreen();
-                else if (docElm.webkitRequestFullscreen) docElm.webkitRequestFullscreen();
-            } else {
-                if (document.exitFullscreen) document.exitFullscreen();
-                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-            }
+        const uiController = setupUIControls({
+            showStatus: (msg, dur) => typeof showStatus === 'function' ? showStatus(msg, dur) : console.log(msg),
+            parseLyrics: (lrc) => { if (_parseLyrics) _parseLyrics(lrc); },
+            switchScene: (idx) => typeof switchScene === 'function' ? switchScene(idx) : null,
+            startLiveAudio: (src) => { if (_startLiveAudio) _startLiveAudio(src); },
+            initAudioContext: () => { if (_initAudioContext) _initAudioContext(); },
+            playAudio: (offset) => { if (_playAudio) _playAudio(offset); },
+            stopAudio: () => { if (_stopAudio) _stopAudio(); }
         });
+        const { wakeUI, showPlayPauseOverlay, setUICollapseState, handleEscape } = uiController;
 
-        function updateFullscreenUI() {
-            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-            if (isFullscreen) {
-                ui.iconFullscreenEnter.classList.add('hidden'); ui.iconFullscreenExit.classList.remove('hidden'); ui.fullscreenText.textContent = '還原';
-            } else {
-                ui.iconFullscreenEnter.classList.remove('hidden'); ui.iconFullscreenExit.classList.add('hidden'); ui.fullscreenText.textContent = '全螢幕';
-            }
-        }
-        document.addEventListener('fullscreenchange', updateFullscreenUI);
-        document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+        const videoExport = setupVideoExport({
+            showStatus: (msg, dur) => typeof showStatus === 'function' ? showStatus(msg, dur) : console.log(msg),
+            initAudioContext: () => { if (_initAudioContext) _initAudioContext(); },
+            playAudio: (offset) => { if (_playAudio) _playAudio(offset); }
+        });
+        const { startRecording, stopRecording, captureFrame } = videoExport;
+        _stopRecording = stopRecording;
 
-        ui.openTunerBtn.addEventListener('click', () => {
-            ui.tunerModal.classList.remove('hidden'); state.tunerIsActive = true;
-            if (!state.isPlaying && !state.isMicMode) startLiveAudio('mic');
+        const audioManager = setupAudioManager({
+            showStatus: (msg, dur) => typeof showStatus === 'function' ? showStatus(msg, dur) : console.log(msg),
+            parseLyrics: (lrc) => { if (_parseLyrics) _parseLyrics(lrc); },
+            stopRecording: () => { if (_stopRecording) _stopRecording(); },
+            wakeUI,
+            showPlayPauseOverlay,
+            setUICollapseState
         });
-        ui.closeTunerModal.addEventListener('click', () => {
-            ui.tunerModal.classList.add('hidden'); state.tunerIsActive = false;
-            ui.tunerFreq.textContent = '-- Hz'; ui.tunerIndicator.style.left = '50%';
-            ui.tunerIndicator.className = 'absolute top-0 bottom-0 w-2 bg-gray-500 transform -translate-x-1/2 transition-all duration-75';
-            ui.tunerNote.className = 'text-7xl font-bold text-gray-600 transition-colors duration-150 drop-shadow-lg'; ui.tunerOctave.textContent = '';
-        });
+        const { formatTime, initAudioContext, handleAudioFile, startLiveAudio, playAudio, seekAudio, stopAudio } = audioManager;
+        _playAudio = playAudio;
+        _startLiveAudio = startLiveAudio;
+        _initAudioContext = initAudioContext;
+        _stopAudio = stopAudio;
+
+
+
 
         const tunerBuffer = new Float32Array(2048);
         const tunerNoteStrings = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -918,54 +616,6 @@
             }
         });
 
-        slScale.addEventListener('input', (e) => { state.vScale = parseFloat(e.target.value); syncFXPanel(); });
-        slRotation.addEventListener('input', (e) => { state.vRotation = parseFloat(e.target.value); syncFXPanel(); });
-        slColor.addEventListener('input', (e) => { state.vColorSpeed = parseFloat(e.target.value); syncFXPanel(); });
-        slDensity.addEventListener('input', (e) => { state.vDensity = parseFloat(e.target.value); syncFXPanel(); });
-        slBpm.addEventListener('input', (e) => { state.bpm = parseInt(e.target.value); syncFXPanel(); });
-        
-        inputLrcColor.addEventListener('input', (e) => {
-            state.lrcColor = e.target.value; state.textDirty = true;
-            if (!state.isLrcMode && ui.lyricsInput.value.trim() !== '') parseLyrics(ui.lyricsInput.value);
-        });
-        chkLrcAutoColor.addEventListener('change', (e) => {
-            state.isLrcAutoColor = e.target.checked; syncFXPanel(); state.textDirty = true;
-            if (!state.isLrcMode && ui.lyricsInput.value.trim() !== '') parseLyrics(ui.lyricsInput.value);
-        });
-        
-        inputLrcBgColor.addEventListener('input', (e) => {
-            state.lrcBgColor = e.target.value; state.textDirty = true;
-            if (!state.isLrcMode && ui.lyricsInput.value.trim() !== '') parseLyrics(ui.lyricsInput.value);
-        });
-        chkLrcBgAutoColor.addEventListener('change', (e) => {
-            state.isLrcBgAutoColor = e.target.checked; syncFXPanel(); state.textDirty = true;
-            if (!state.isLrcMode && ui.lyricsInput.value.trim() !== '') parseLyrics(ui.lyricsInput.value);
-        });
-        slLrcBgOpacity.addEventListener('input', (e) => {
-            state.lrcBgOpacity = parseInt(e.target.value) / 100;
-            document.getElementById('val-lrc-bg-opacity').textContent = e.target.value + '%';
-            state.textDirty = true;
-            if (!state.isLrcMode && ui.lyricsInput.value.trim() !== '') parseLyrics(ui.lyricsInput.value);
-        });
-        
-        chkAutoScene.addEventListener('change', (e) => { state.isAutoMode = e.target.checked; showStatus(state.isAutoMode ? '自動模式開啟' : '手動模式開啟'); });
-        document.getElementById('btn-prev-scene').addEventListener('click', () => { state.isAutoMode = false; syncFXPanel(); switchScene((state.currentScene - 1 + 16) % 16); });
-        document.getElementById('btn-next-scene').addEventListener('click', () => { state.isAutoMode = false; syncFXPanel(); switchScene((state.currentScene + 1) % 16); });
-
-        const ctrlItems = document.querySelectorAll('.ctrl-item');
-        ctrlItems.forEach(item => {
-            item.addEventListener('click', () => {
-                document.activeElement.blur(); 
-                ctrlItems.forEach(i => { i.classList.remove('bg-purple-500/30', 'border-purple-500'); i.querySelector('.name').classList.replace('text-white', 'text-gray-400'); });
-                item.classList.add('bg-purple-500/30', 'border-purple-500'); item.querySelector('.name').classList.replace('text-gray-400', 'text-white');
-                state.activeControl = item.getAttribute('data-target'); showStatus(`已鎖定控制：${item.querySelector('.name').innerText} (請使用方向鍵 ↑↓ 或雙指縮放調整)`);
-            });
-        });
-
-        document.getElementById('btn-hotkey-c').addEventListener('click', () => { state.isAutoMode = !state.isAutoMode; showStatus(state.isAutoMode ? '自動模式開啟' : '手動模式開啟'); syncFXPanel(); });
-        document.getElementById('btn-hotkey-space').addEventListener('click', () => { ui.playBtn.click(); });
-        document.getElementById('btn-hotkey-enter').addEventListener('click', () => { setUICollapseState(!isUICollapsed); });
-        document.getElementById('btn-hotkey-esc').addEventListener('click', () => { handleEscape(); });
 
         function showStatus(text, duration = 3000) {
             ui.statusBox.textContent = text; ui.statusBox.classList.remove('hidden');
@@ -1005,155 +655,17 @@
         bgMaskSprite.renderOrder = 998; bgMaskSprite.scale.set(100, 50, 1); bgMaskSprite.position.set(0, 0, 10); lyricsScene.add(bgMaskSprite);
 
         // ==========================================
-        // 歌詞渲染邏輯
+        // 歌詞渲染邏輯 (已抽取至 lyricsParser.js)
         // ==========================================
         
-        function drawLrcMask() {
-            bgMaskCanvas.width = 2048; bgMaskCanvas.height = 1024;
-            bgMaskCtx.clearRect(0, 0, 2048, 1024);
-            const cx = 1024; const cy = 512;
-            
-            bgMaskCtx.save();
-            bgMaskCtx.translate(cx, cy);
-            bgMaskCtx.scale(1, 0.2); 
-            
-            const rGrad = bgMaskCtx.createRadialGradient(0, 0, 0, 0, 800);
-            rGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            rGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)');
-            rGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            
-            bgMaskCtx.fillStyle = rGrad;
-            bgMaskCtx.fillRect(-1024, -2560, 2048, 5120); 
-            bgMaskCtx.restore();
-            bgMaskTexture.needsUpdate = true;
-        }
+        const lyricsParser = setupLyricsParser({
+            textCanvas, textCtx, textTexture, textSprite,
+            bgMaskCanvas, bgMaskCtx, bgMaskTexture, bgMaskSprite,
+            showStatus
+        });
+        const { parseLyrics, renderVisibleLyrics } = lyricsParser;
+        _parseLyrics = parseLyrics;
 
-        function drawPlainMask(startY, height) {
-            bgMaskCanvas.width = 2048; bgMaskCanvas.height = Math.max(1024, height + 1024);
-            bgMaskCtx.clearRect(0, 0, bgMaskCanvas.width, bgMaskCanvas.height);
-            
-            const cx = 1024;
-            const hGrad = bgMaskCtx.createLinearGradient(cx - 900, 0, cx + 900, 0);
-            hGrad.addColorStop(0, 'rgba(255,255,255,0)');
-            hGrad.addColorStop(0.3, 'rgba(255,255,255,1)');
-            hGrad.addColorStop(0.7, 'rgba(255,255,255,1)');
-            hGrad.addColorStop(1, 'rgba(255,255,255,0)');
-            
-            bgMaskCtx.fillStyle = hGrad;
-            bgMaskCtx.filter = 'blur(40px)'; 
-            bgMaskCtx.fillRect(cx - 900, startY - 100, 1800, height + 200);
-            bgMaskCtx.filter = 'none';
-            bgMaskTexture.needsUpdate = true;
-        }
-
-        function parseLyrics(text) {
-            state.isPureTextDrawn = false;
-            if(text.trim() === '') {
-                state.parsedLyrics = null; state.lrcLines = []; state.isLrcMode = false;
-                textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height); textTexture.needsUpdate = true;
-                bgMaskCtx.clearRect(0, 0, bgMaskCanvas.width, bgMaskCanvas.height); bgMaskTexture.needsUpdate = true;
-                return;
-            }
-
-            const lrcRegex = /\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?\]/; state.isLrcMode = lrcRegex.test(text); let plainTextForFallback = text;
-
-            if (state.isLrcMode) {
-                state.lrcLines = []; const lines = text.split('\n'); const cleanLines = [];
-                lines.forEach(line => {
-                    const match = line.match(/\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?\]/);
-                    if (match) {
-                        const mins = parseInt(match[1]), secs = parseInt(match[2]), ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
-                        const timeInSeconds = mins * 60 + secs + ms / 1000; const content = line.replace(/\[.*?\]/g, '').trim();
-                        if (content) state.lrcLines.push({ time: timeInSeconds, text: content });
-                    }
-                    const clean = line.replace(/\[.*?\]/g, '').trim(); if (clean) cleanLines.push(clean);
-                });
-                state.lrcLines.sort((a, b) => a.time - b.time); state.lrcScrollY = 0; plainTextForFallback = cleanLines.join('\n');
-                textCanvas.height = 1024; textTexture.repeat.set(1, 1); textTexture.offset.y = 0; textSprite.scale.set(100, 50, 1); state.textDirty = true;
-                
-                drawLrcMask(); 
-                showStatus('LRC 動態歌詞解析成功！'); return;
-            }
-
-            const fontSize = 60, titleFontSize = 90, maxWidth = textCanvas.width * 0.85, lineHeightFactor = 1.4; 
-            const originalLines = plainTextForFallback.split('\n'); const titleStr = originalLines[0] || ''; const lyricsStrs = originalLines.slice(1);
-            const parsedLines = []; let currentOffsetY = 0;
-
-            function wrapText(str, size, isTitle) {
-                textCtx.font = `bold ${size}px 'Segoe UI', sans-serif`; let currentLine = '';
-                for (let i = 0; i < str.length; i++) {
-                    const char = str[i]; const testLine = currentLine + char;
-                    if (textCtx.measureText(testLine).width > maxWidth && currentLine !== '') {
-                        parsedLines.push({ text: currentLine, size: size, isTitle: isTitle, offsetY: currentOffsetY });
-                        currentOffsetY += size * lineHeightFactor; currentLine = char;
-                    } else currentLine = testLine;
-                }
-                if (currentLine !== '') { parsedLines.push({ text: currentLine, size: size, isTitle: isTitle, offsetY: currentOffsetY }); currentOffsetY += size * lineHeightFactor; }
-            }
-
-            if (titleStr) { wrapText(titleStr, titleFontSize, true); currentOffsetY += 30; }
-            for (const line of lyricsStrs) { if (line.trim() === '') { currentOffsetY += fontSize * lineHeightFactor; continue; } wrapText(line, fontSize, false); }
-            parsedLines.forEach(line => { line.offsetY += (line.size * lineHeightFactor) / 2; });
-
-            const visibleHeight = 1024, topPadding = visibleHeight * 0.4, bottomPadding = visibleHeight * 0.8;
-            const requiredHeight = currentOffsetY + topPadding + bottomPadding; let actualHeight = 1024, contentScale = 1;
-
-            if (state.isMicMode) { actualHeight = visibleHeight; if (currentOffsetY > visibleHeight * 0.85) contentScale = (visibleHeight * 0.85) / currentOffsetY; } 
-            else { actualHeight = Math.min(8192, requiredHeight); if (requiredHeight > 8192) contentScale = 8192 / requiredHeight; }
-
-            textCanvas.width = 2048; textCanvas.height = actualHeight;
-            const repeatY = visibleHeight / actualHeight; textTexture.repeat.set(1, repeatY); textTexture.offset.y = state.isMicMode ? 0 : (1.0 - repeatY); state.textTextureRatio = repeatY;
-            textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
-
-            textCtx.textAlign = "center"; 
-            textCtx.textBaseline = "middle";
-
-            let baseStartY = state.isMicMode ? (actualHeight - (currentOffsetY * contentScale)) / 2 : topPadding * contentScale;
-            state.plainTextStartY = baseStartY; state.plainTextHeight = currentOffsetY * contentScale;
-            
-            drawPlainMask(state.plainTextStartY, state.plainTextHeight); 
-            bgMaskTexture.repeat.copy(textTexture.repeat); bgMaskTexture.offset.copy(textTexture.offset); 
-
-            for (const line of parsedLines) {
-                const actualOffsetY = line.offsetY * contentScale; const y = baseStartY + actualOffsetY; const scaledSize = line.size * contentScale;
-                textCtx.font = `bold ${scaledSize}px 'Segoe UI', sans-serif`;
-                textCtx.shadowColor = 'rgba(0, 0, 0, 0.9)'; textCtx.shadowBlur = scaledSize * 0.2; textCtx.lineWidth = scaledSize * 0.12; textCtx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
-                textCtx.strokeText(line.text, textCanvas.width / 2, y); textCtx.shadowBlur = 0; 
-                textCtx.fillStyle = '#ffffff'; 
-                textCtx.fillText(line.text, textCanvas.width / 2, y);
-            }
-            textTexture.needsUpdate = true; state.isPureTextDrawn = true; showStatus('純文字歌詞已載入 (單次渲染極速模式 ⚡)');
-        }
-
-        function renderVisibleLyrics(currentTime = 0) {
-            if (!state.isLrcMode || state.lrcLines.length === 0 || state.isMicMode) return;
-            const canvasCenterY = textCanvas.height / 2; let activeIdx = -1;
-            for (let i = state.lrcLines.length - 1; i >= 0; i--) { if (currentTime >= state.lrcLines[i].time) { activeIdx = i; break; } }
-            state.targetLrcScrollY = activeIdx >= 0 ? activeIdx * 120 : 0; state.lrcScrollY += (state.targetLrcScrollY - state.lrcScrollY) * 0.1;
-            let popScale = 1;
-            if (activeIdx >= 0) { const timeSinceStart = currentTime - state.lrcLines[activeIdx].time; if (timeSinceStart < 0.15 && timeSinceStart >= 0) popScale = 1 + (0.15 - timeSinceStart) * 1.5; }
-
-            const needsRedraw = state.textDirty || activeIdx !== state.lastRenderActiveIdx || Math.abs(state.lrcScrollY - state.lastRenderLrcScrollY) > 0.5 || Math.abs(popScale - state.lastRenderPopScale) > 0.01;
-            if (!needsRedraw) return; 
-
-            state.lastRenderActiveIdx = activeIdx; state.lastRenderLrcScrollY = state.lrcScrollY; state.lastRenderPopScale = popScale; state.textDirty = false;
-            textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
-            textCtx.textAlign = "center"; textCtx.textBaseline = "middle";
-
-            for (let i = 0; i < state.lrcLines.length; i++) {
-                const line = state.lrcLines[i]; const yOffset = (i * 120) - state.lrcScrollY; const y = canvasCenterY + yOffset;
-                if (y > -150 && y < textCanvas.height + 150) {
-                    const dist = Math.abs(i - activeIdx); const isActive = (i === activeIdx);
-                    let currentPopScale = isActive ? popScale : 1; let fontSize = isActive ? 80 * currentPopScale : Math.max(40, 60 - dist * 5);
-                    let opacity = isActive ? 1 : Math.max(0.1, 0.5 - dist * 0.1);
-                    textCtx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`; textCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`; textCtx.shadowBlur = 20; textCtx.lineWidth = fontSize * 0.15;
-                    textCtx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.95})`; textCtx.strokeText(line.text, textCanvas.width / 2, y); textCtx.shadowBlur = 0;
-                    textCtx.fillStyle = `rgba(255, 255, 255, ${opacity})`; 
-                    textCtx.fillText(line.text, textCanvas.width / 2, y);
-                }
-            }
-            textTexture.needsUpdate = true; 
-        }
 
         ui.lyricsInput.addEventListener('focus', (e) => { e.target.placeholder = "請輸入純文字或貼上 .lrc 動態歌詞...\n(例如: [00:15.30] 某段歌詞...)\n\n※ 完成後請按 Enter 或點擊旁邊空白處確認。"; });
         ui.lyricsInput.addEventListener('blur', (e) => { e.target.placeholder = "📝 點擊輸入或貼上歌詞..."; e.target.scrollTop = 0; parseLyrics(e.target.value); });
@@ -1162,104 +674,8 @@
         // ==========================================
         // 3D 視覺場景生成
         // ==========================================
-        const masterGroup = new THREE.Group(); scene.add(masterGroup); const groups = [];
-        for(let i=0; i<16; i++) { const group = new THREE.Group(); group.visible = false; masterGroup.add(group); groups.push(group); }
-        
-        const particlesGeometry = new THREE.BufferGeometry(); const posArray = new Float32Array(18000 * 3);
-        for(let i = 0; i < 18000; i++) { posArray[i*3] = (Math.random()-0.5)*200; posArray[i*3+1] = (Math.random()-0.5)*200; posArray[i*3+2] = (Math.random()-0.5)*200; }
-        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        const particlesMaterial = new THREE.PointsMaterial({ size: 0.5, color: 0x88ccff, transparent: true, opacity: 0.8 });
-        const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial); groups[0].add(particlesMesh); groups[0].visible = true;
+        const masterGroup = new THREE.Group(); scene.add(masterGroup);
 
-        const geoCoreMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xaa00ff, emissiveIntensity: 2.0, flatShading: true });
-        const geoCoreMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(8, 0), geoCoreMat);
-        const geoMidMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.8, emissive: 0x002255 });
-        const geoMidMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 1), geoMidMat);
-        const geoOuterMat = new THREE.MeshStandardMaterial({ color: 0xff00aa, wireframe: true, transparent: true, opacity: 0.3 });
-        const geoOuterMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(19, 2), geoOuterMat);
-        groups[1].add(geoCoreMesh, geoMidMesh, geoOuterMesh);
-        const geoDebrisList = []; const debrisGeo = new THREE.OctahedronGeometry(1.2, 0);
-        for(let i = 0; i < 80; i++) {
-            const debrisMat = new THREE.MeshStandardMaterial({ color: 0xffffff, wireframe: Math.random() > 0.3, emissive: 0x000000 });
-            const debris = new THREE.Mesh(debrisGeo, debrisMat);
-            const phi = Math.acos(-1 + (2 * i) / 80); const theta = Math.sqrt(80 * Math.PI) * phi; const dist = 25 + Math.random() * 30;
-            debris.position.setFromSphericalCoords(dist, phi, theta);
-            debris.userData = { baseDist: dist, rx: (Math.random() - 0.5) * 0.05, ry: (Math.random() - 0.5) * 0.05, index: i };
-            geoDebrisList.push(debris); groups[1].add(debris);
-        }
-
-        const rings = []; const ringGeo = new THREE.TorusGeometry(20, 0.5, 8, 50); 
-        for(let i = 0; i < 90; i++) {
-            const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0 }));
-            ring.position.z = -i * 10; rings.push(ring); groups[2].add(ring);
-        }
-
-        const spectrumBars = []; const barGeo = new THREE.BoxGeometry(1, 1, 1); 
-        for(let i = 0; i < 192; i++) {
-            const bar = new THREE.Mesh(barGeo, new THREE.MeshStandardMaterial({color: 0x00ffcc, emissive: 0x004433, emissiveIntensity: 2.0}));
-            const angle = ((i % 64) / 64) * Math.PI * 2; const radius = 20 + Math.floor(i / 64) * 2;
-            bar.position.set(Math.cos(angle)*radius, Math.sin(angle)*radius, 0); bar.rotation.z = angle;
-            spectrumBars.push(bar); groups[3].add(bar);
-        }
-
-        const terrainGeo = new THREE.PlaneGeometry(80, 80, 32, 32); const terrainMat = new THREE.MeshStandardMaterial({color: 0xff00ff, wireframe: true, emissive: 0x220044});
-        const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat); terrainMesh.rotation.x = -Math.PI / 2.5; terrainMesh.position.y = -15; groups[4].add(terrainMesh);
-
-        const spikes = []; const spikeGeo = new THREE.ConeGeometry(0.8, 12, 4); 
-        groups[5].add(new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16), new THREE.MeshBasicMaterial({color: 0xffffff, wireframe:true})));
-        for(let i = 0; i < 120; i++) {
-            const spike = new THREE.Mesh(spikeGeo, new THREE.MeshStandardMaterial({color: 0xffaa00}));
-            const phi = Math.acos(-1 + (2 * (i % 40)) / 40); const theta = Math.sqrt(40 * Math.PI) * phi;
-            spike.position.setFromSphericalCoords(4 + Math.floor(i/40)*1, phi, theta); spike.lookAt(0,0,0); spikes.push(spike); groups[5].add(spike);
-        }
-
-        const helixSpheres = []; const hGeo1 = new THREE.SphereGeometry(1.0, 16, 16); const hGeo2 = new THREE.IcosahedronGeometry(0.8, 0);
-        const helixPillar = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 120, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, wireframe: true, blending: THREE.AdditiveBlending }));
-        groups[6].add(helixPillar);
-        for(let i = 0; i < 360; i++) {
-            const isWire = i % 4 === 0; const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x000000, emissiveIntensity: 2.5, wireframe: isWire, transparent: true, opacity: isWire ? 0.6 : 1.0 });
-            const geo = i % 2 === 0 ? hGeo1 : hGeo2; 
-            const s1 = new THREE.Mesh(geo, mat.clone()); s1.userData = { index: i, strand: 0 }; const s2 = new THREE.Mesh(geo, mat.clone()); s2.userData = { index: i, strand: 1 }; const s3 = new THREE.Mesh(geo, mat.clone()); s3.userData = { index: i, strand: 2 };
-            helixSpheres.push(s1, s2, s3); groups[6].add(s1, s2, s3);
-        }
-
-        const matrixCubes = []; const cubeGeo = new THREE.BoxGeometry(2.5,2.5,2.5); 
-        for(let x=-3; x<=3; x++) { for(let y=-3; y<=3; y++) { for(let z=-3; z<=3; z++) { const cube = new THREE.Mesh(cubeGeo, new THREE.MeshBasicMaterial({color: 0x00ffff, wireframe:true})); cube.position.set(x*8, y*8, z*8); matrixCubes.push(cube); groups[7].add(cube); } } }
-
-        const gyroRings = [];
-        for(let i = 0; i < 15; i++) { const idx = i % 5; const layer = Math.floor(i / 5); const ring = new THREE.Mesh(new THREE.TorusGeometry(8 + idx*4 + layer*2, 0.4, 16, 64), new THREE.MeshStandardMaterial({color: 0xffffff, emissive: 0x333333, emissiveIntensity: 1.5, wireframe: idx%2===0})); gyroRings.push(ring); groups[8].add(ring); }
-
-        const starburstGeo = new THREE.BufferGeometry(); const sbPositions = new Float32Array(600 * 2 * 3); const sbColors = new Float32Array(600 * 2 * 3);
-        for(let i=0; i<600; i++) {
-            sbPositions[i*6] = 0; sbPositions[i*6+1] = 0; sbPositions[i*6+2] = 0; const theta = Math.random() * 2.0 * Math.PI; const phi = Math.acos(2.0 * Math.random() - 1.0);
-            sbPositions[i*6+3] = 20 * Math.sin(phi) * Math.cos(theta); sbPositions[i*6+4] = 20 * Math.sin(phi) * Math.sin(theta); sbPositions[i*6+5] = 20 * Math.cos(phi);
-            sbColors[i*6] = 1; sbColors[i*6+1] = 1; sbColors[i*6+2] = 1; sbColors[i*6+3] = 1; sbColors[i*6+4] = 0; sbColors[i*6+5] = 1;
-        }
-        starburstGeo.setAttribute('position', new THREE.BufferAttribute(sbPositions, 3)); starburstGeo.setAttribute('color', new THREE.BufferAttribute(sbColors, 3));
-        const starburstLines = new THREE.LineSegments(starburstGeo, new THREE.LineBasicMaterial({vertexColors: true, transparent: true, opacity: 0.8})); groups[9].add(starburstLines);
-
-        const knotMesh = new THREE.Mesh(new THREE.TorusKnotGeometry(12, 3, 150, 20), new THREE.MeshStandardMaterial({color: 0xff0055, emissive: 0x330011, emissiveIntensity: 2.0, wireframe: true})); groups[10].add(knotMesh);
-
-        const vortexGeo = new THREE.BufferGeometry(); const vPos = new Float32Array(9000 * 3);
-        for(let i=0; i<9000; i++) { const y = (Math.random() - 0.5) * 80; const radius = 3 + (y + 40) * 0.4 + Math.random()*3; const angle = Math.random() * Math.PI * 2; vPos[i*3] = Math.cos(angle) * radius; vPos[i*3+1] = y; vPos[i*3+2] = Math.sin(angle) * radius; }
-        vortexGeo.setAttribute('position', new THREE.BufferAttribute(vPos, 3)); const vortexMesh = new THREE.Points(vortexGeo, new THREE.PointsMaterial({size: 0.4, color: 0x00ffcc, transparent: true, opacity: 0.6})); groups[11].add(vortexMesh);
-
-        const discs = [];
-        for(let i=0; i<24; i++) { const layer = Math.floor(i / 8); const disc = new THREE.Mesh(new THREE.RingGeometry(6 + layer*2, 18 + layer*2, 32), new THREE.MeshBasicMaterial({color: 0xffaa00, wireframe: true, side: THREE.DoubleSide, transparent: true, opacity: 0.5})); disc.rotation.x = Math.PI / 2; disc.position.y = ((i % 8) - 3.5) * 4; discs.push(disc); groups[12].add(disc); }
-
-        const ribbons = []; const ribbonPoints = 256;
-        for(let j=0; j<5; j++) {
-            const rGeo = new THREE.BufferGeometry(); const rPos = new Float32Array(ribbonPoints * 3);
-            for(let i=0; i<ribbonPoints; i++) { const angle = (i / ribbonPoints) * Math.PI * 2; rPos[i*3] = Math.cos(angle) * (10 + j*4); rPos[i*3+1] = 0; rPos[i*3+2] = Math.sin(angle) * (10 + j*4); }
-            rGeo.setAttribute('position', new THREE.BufferAttribute(rPos, 3)); const rMat = new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.8 }); const ribbonLine = new THREE.LineLoop(rGeo, rMat); ribbons.push({ mesh: ribbonLine, baseRadius: 10 + j*4 }); groups[13].add(ribbonLine);
-        }
-
-        const eqRingBars = []; const eqBarGeo = new THREE.BoxGeometry(0.8, 1, 0.8); 
-        for(let i=0; i<128; i++) { const bar = new THREE.Mesh(eqBarGeo, new THREE.MeshStandardMaterial({color: 0x00ffff, emissive: 0x002222, emissiveIntensity: 2.0})); const angle = (i / 128) * Math.PI * 2; bar.position.set(Math.cos(angle)*25, 0, Math.sin(angle)*25); bar.lookAt(0, 0, 0); eqRingBars.push(bar); groups[14].add(bar); }
-
-        const crystals = []; const crystalGeo = new THREE.CylinderGeometry(0, 1.5, 10, 4, 1);
-        const core = new THREE.Mesh(new THREE.IcosahedronGeometry(6, 1), new THREE.MeshStandardMaterial({color: 0xffffff, wireframe: true})); groups[15].add(core);
-        for(let i=0; i<80; i++) { const crystal = new THREE.Mesh(crystalGeo, new THREE.MeshStandardMaterial({color: 0xffaa00, emissive: 0x440022})); const phi = Math.acos(-1 + (2 * i) / 80); const theta = Math.sqrt(80 * Math.PI) * phi; crystal.userData = { phi, theta }; crystal.position.setFromSphericalCoords(8, phi, theta); crystal.lookAt(0,0,0); crystal.rotateX(Math.PI / 2); crystals.push(crystal); groups[15].add(crystal); }
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
@@ -1278,7 +694,15 @@
         container.addEventListener('dblclick', () => { dragControl.targetX = 0; dragControl.targetY = 0; showStatus('特效中心已重置'); });
 
         container.addEventListener('touchstart', (e) => { 
-            if (e.touches.length === 1) { dragControl.isDragging = true; dragControl.isPinching = false; dragControl.prevX = e.touches[0].clientX; dragControl.prevY = e.touches[0].clientY; } 
+            if (e.touches.length === 1) { 
+                dragControl.isDragging = true; 
+                dragControl.isPinching = false; 
+                dragControl.prevX = e.touches[0].clientX; 
+                dragControl.prevY = e.touches[0].clientY; 
+                dragControl.startX = dragControl.prevX;
+                dragControl.startY = dragControl.prevY;
+                dragControl.startTime = Date.now();
+            } 
             else if (e.touches.length === 2) { dragControl.isDragging = false; dragControl.isPinching = true; dragControl.pinchDist = getPinchDistance(e.touches); }
         }, { passive: false });
 
@@ -1302,39 +726,35 @@
         }, { passive: false });
 
         container.addEventListener('touchend', (e) => { 
+            if (e.changedTouches && e.changedTouches.length === 1 && dragControl.isDragging) {
+                const dx = e.changedTouches[0].clientX - dragControl.startX;
+                const dy = e.changedTouches[0].clientY - dragControl.startY;
+                const dt = Date.now() - dragControl.startTime;
+                if (Math.abs(dx) > 50 && Math.abs(dy) < 50 && dt < 500) {
+                    state.isAutoMode = false; syncFXPanel();
+                    switchScene(state.currentScene + (dx < 0 ? 1 : -1));
+                }
+            }
             if (e.touches.length < 2) dragControl.isPinching = false; if (e.touches.length === 0) dragControl.isDragging = false;
             if (e.touches.length === 1) { dragControl.isDragging = true; dragControl.prevX = e.touches[0].clientX; dragControl.prevY = e.touches[0].clientY; }
         });
 
-        function switchScene(sceneIndex) {
-            state.currentScene = sceneIndex; groups.forEach((g, idx) => g.visible = (idx === sceneIndex));
-            camera.position.set(0, 0, 50); camera.rotation.set(0, 0, 0); showStatus(`場景切換: ${sceneNames[sceneIndex]}`);
+        function switchScene(sceneNameOrIndex) {
+            masterGroup.clear();
+            let names = sceneFactory.getSceneNames();
+            if (typeof sceneNameOrIndex === 'number') {
+                state.currentScene = (sceneNameOrIndex + names.length) % names.length;
+            } else {
+                state.currentScene = Math.max(0, names.indexOf(sceneNameOrIndex));
+            }
+            const name = names[state.currentScene];
+            sceneFactory.loadScene(name, masterGroup, state.analyser);
+            camera.position.set(0, 0, 50); camera.rotation.set(0, 0, 0); showStatus(`場景切換: ${name}`);
         }
 
         // ==========================================
-        // 4. 音訊與麥克風處理控制
+        // 4. 音訊與麥克風處理控制 (已抽取至 audioManager.js)
         // ==========================================
-        function formatTime(seconds) {
-            if (isNaN(seconds) || !isFinite(seconds)) return "0:00";
-            const m = Math.floor(seconds / 60); const s = Math.floor(seconds % 60).toString().padStart(2, '0'); return `${m}:${s}`;
-        }
-
-        async function handleAudioFile(file) {
-            if (!file || !file.type.startsWith('audio/')) return showStatus('請上傳有效的音訊檔案');
-            if (state.isMicMode) stopAudio(); 
-            initAudioContext(); if (state.isPlaying) stopAudio(); 
-            
-            state.currentProgress = 0; showStatus('音訊解碼中，大檔案可能需要數秒...');
-            ui.playBtn.disabled = true; ui.recordBtn.disabled = true;
-            
-            try {
-                const arrayBuffer = await file.arrayBuffer(); state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
-                state.audioDuration = state.audioBuffer.duration; ui.timeTotal.textContent = formatTime(state.audioDuration);
-                ui.progressWrapper.classList.remove('hidden'); setTimeout(() => ui.progressWrapper.classList.remove('opacity-0'), 50);
-                showStatus('音訊載入完成，請點擊播放 MP3！'); ui.playBtn.disabled = false; ui.recordBtn.disabled = false;
-                ui.removeAudioBtn.classList.remove('hidden'); ui.audioLabelText.textContent = '已載入 MP3';
-            } catch (error) { showStatus('音訊解碼失敗，可能是格式不支援或檔案毀損。'); ui.playBtn.disabled = true; ui.recordBtn.disabled = true; }
-        }
 
         function handleBgFile(file) {
             if (!file) return;
@@ -1397,93 +817,11 @@
         ui.micBtn.addEventListener('click', () => { if (state.isMicMode) stopAudio(); else ui.audioSourceModal.classList.remove('hidden'); });
         ui.closeAudioModal.addEventListener('click', () => { ui.audioSourceModal.classList.add('hidden'); });
 
-        async function startLiveAudio(sourceType) {
-            ui.audioSourceModal.classList.add('hidden'); initAudioContext(); if (state.isPlaying) stopAudio(); 
-            try {
-                let stream;
-                if (sourceType === 'mic') stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-                else if (sourceType === 'system') {
-                    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-                    if (stream.getAudioTracks().length === 0) { stream.getTracks().forEach(track => track.stop()); throw new Error('未分享音訊'); }
-                }
-                state.micStream = stream; state.source = state.audioContext.createMediaStreamSource(stream);
-                
-                if (!state.analyser) { state.analyser = state.audioContext.createAnalyser(); state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; state.dataArray = new Uint8Array(state.analyser.frequencyBinCount); }
-                if (!state.tunerAnalyser) { state.tunerAnalyser = state.audioContext.createAnalyser(); state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize); }
 
-                state.analyser.disconnect(); state.tunerAnalyser.disconnect();
-                state.source.connect(state.analyser); state.source.connect(state.tunerAnalyser);
-                if(state.mediaStreamDestination) state.source.connect(state.mediaStreamDestination);
-                
-                state.isMicMode = true; state.isPlaying = true; parseLyrics(ui.lyricsInput.value);
-                ui.micBtn.querySelector('div').classList.add('bg-red-500/50', 'border-red-500');
-                ui.playBtn.disabled = true; ui.recordBtn.disabled = false; 
-                ui.playIcon.classList.add('hidden'); ui.pauseIcon.classList.remove('hidden'); ui.playText.textContent = '暫停';
-                wakeUI(); showStatus(sourceType === 'mic' ? '🎤 麥克風收音已啟動' : '💻 電腦內部音源已連接');
-                stream.getVideoTracks().forEach(track => { track.onended = () => { if(state.isMicMode) stopAudio(); }; });
-            } catch (err) {
-                if (err.message === '未分享音訊') showStatus('未偵測到音訊！請確保在選擇視窗中勾選了「分享系統音訊」。', 5000);
-                else if (err.name === 'NotAllowedError' || (err.message && err.message.includes('display-capture'))) showStatus('無法擷取系統音訊：當前環境安全性限制。請改用「🎤 麥克風」或上傳 MP3。', 6000);
-                else showStatus('無法啟動音源，請檢查瀏覽器權限或操作。');
-            }
-        }
         ui.btnMicSource.addEventListener('click', () => startLiveAudio('mic'));
         ui.btnSystemSource.addEventListener('click', () => startLiveAudio('system'));
 
-        function playAudio(offset = 0, keepPaused = false) {
-            if (!state.audioBuffer && !state.isMicMode) return showStatus('請先載入 MP3 音訊');
-            if (state.isMicMode) stopAudio(); 
-            initAudioContext(!keepPaused);
-            
-            if (state.source) { state.source.onended = null; state.source.stop(); state.source.disconnect(); }
-            
-            state.source = state.audioContext.createBufferSource(); state.source.buffer = state.audioBuffer;
-            
-            if (!state.analyser) { state.analyser = state.audioContext.createAnalyser(); state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; state.dataArray = new Uint8Array(state.analyser.frequencyBinCount); }
-            if (!state.tunerAnalyser) { state.tunerAnalyser = state.audioContext.createAnalyser(); state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize); }
 
-            state.analyser.disconnect(); state.tunerAnalyser.disconnect();
-            state.source.connect(state.analyser); state.source.connect(state.tunerAnalyser);
-            state.source.connect(state.audioContext.destination); 
-            if (state.mediaStreamDestination) state.source.connect(state.mediaStreamDestination);
-            
-            state.audioDuration = state.audioBuffer.duration; state.audioStartTime = state.audioContext.currentTime - offset;
-            state.source.start(0, offset); 
-
-            if (keepPaused && state.audioContext.state === 'running') {
-                state.source.onended = null; 
-                state.source.stop(); 
-            } else {
-                state.source.onended = () => { stopAudio(); if(state.isRecording) stopRecording(); };
-            }
-
-            if (!keepPaused) {
-                state.isPlaying = true;
-                if (state.isLrcMode && offset === 0) state.lrcScrollY = 0;
-                wakeUI(); ui.playIcon.classList.add('hidden'); ui.pauseIcon.classList.remove('hidden'); ui.playText.textContent = '暫停';
-                if (offset === 0) showPlayPauseOverlay(true); 
-            } else {
-                state.isPlaying = false;
-                ui.playIcon.classList.remove('hidden'); ui.pauseIcon.classList.add('hidden'); ui.playText.textContent = '繼續播放';
-            }
-        }
-
-        async function seekAudio(percent) {
-            if (!state.audioBuffer || state.isMicMode) return;
-            const wasPlaying = state.isPlaying; const targetTime = (percent / 100) * state.audioDuration;
-            
-            playAudio(targetTime, !wasPlaying);
-            
-            if (state.isLrcMode) {
-                let activeIdx = -1; for (let i = state.lrcLines.length - 1; i >= 0; i--) { if (targetTime >= state.lrcLines[i].time) { activeIdx = i; break; } }
-                state.lrcScrollY = activeIdx >= 0 ? activeIdx * 120 : 0; state.textDirty = true;
-            }
-            
-            if (!wasPlaying) {
-                state.currentProgress = percent / 100;
-                ui.timeCurrent.textContent = formatTime(targetTime);
-            }
-        }
 
         ui.progressSlider.addEventListener('mousedown', () => state.isDraggingProgress = true);
         ui.progressSlider.addEventListener('touchstart', () => state.isDraggingProgress = true, { passive: true });
@@ -1513,18 +851,7 @@
             }
         });
 
-        function stopAudio() {
-            if (state.isMicMode) {
-                if (state.micStream) { state.micStream.getTracks().forEach(track => track.stop()); state.micStream = null; }
-                state.isMicMode = false; parseLyrics(ui.lyricsInput.value);
-                ui.micBtn.querySelector('div').classList.remove('bg-red-500/50', 'border-red-500'); ui.playBtn.disabled = false; 
-            } else { if (state.source) { state.source.onended = null; state.source.stop(); } }
-            if (state.source) { state.source.disconnect(); state.source = null; }
-            
-            state.isPlaying = false; state.currentProgress = 0; if (state.isLrcMode) state.lrcScrollY = 0;
-            if (!state.isDraggingProgress) { ui.progressSlider.value = 0; ui.timeCurrent.textContent = "0:00"; }
-            setUICollapseState(false); wakeUI(); ui.playIcon.classList.remove('hidden'); ui.pauseIcon.classList.add('hidden'); ui.playText.textContent = '播放 MP3';
-        }
+
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { if (handleEscape()) return; }
@@ -1540,7 +867,7 @@
                     case 'color': state.vColorSpeed = Math.max(0.0, Math.min(5.0, state.vColorSpeed + (isUp ? 0.1 : -0.1))); showStatus(`變色速度: ${Math.round(state.vColorSpeed * 100)}%`); break;
                     case 'density': state.vDensity = Math.max(0.1, Math.min(3.0, state.vDensity + (isUp ? 0.1 : -0.1))); showStatus(`數量多寡: ${Math.round(state.vDensity * 100)}%`); break;
                     case 'bpm': state.bpm = Math.max(40, Math.min(300, state.bpm + (isUp ? 5 : -5))); showStatus(`模擬速度: ${state.bpm} BPM`); break;
-                    case 'scene': state.isAutoMode = false; if (isUp) switchScene((state.currentScene + 1) % 16); if (isDown) switchScene((state.currentScene - 1 + 16) % 16); break;
+                    case 'scene': state.isAutoMode = false; if (isUp) switchScene(state.currentScene + 1); if (isDown) switchScene(state.currentScene - 1); break;
                 }
                 syncFXPanel(); return; 
             }
@@ -1559,13 +886,7 @@
                 case 'KeyG': e.preventDefault(); state.vDensity = Math.max(0.1, state.vDensity - 0.1); syncFXPanel(); break;
             }
 
-            if (e.code.startsWith('Digit')) { const digit = parseInt(e.code.replace('Digit', '')); const sceneIndex = digit === 0 ? 9 : digit - 1; e.preventDefault(); state.isAutoMode = false; switchScene(sceneIndex); syncFXPanel();
-            } else if (e.code === 'Minus') { e.preventDefault(); state.isAutoMode = false; switchScene(10); syncFXPanel();
-            } else if (e.code === 'Equal') { e.preventDefault(); state.isAutoMode = false; switchScene(11); syncFXPanel();
-            } else if (e.code === 'BracketLeft') { e.preventDefault(); state.isAutoMode = false; switchScene(12); syncFXPanel();
-            } else if (e.code === 'BracketRight') { e.preventDefault(); state.isAutoMode = false; switchScene(13); syncFXPanel();
-            } else if (e.code === 'Backslash') { e.preventDefault(); state.isAutoMode = false; switchScene(14); syncFXPanel();
-            } else if (e.code === 'Semicolon') { e.preventDefault(); state.isAutoMode = false; switchScene(15); syncFXPanel(); }
+
         });
 
         // ==========================================
@@ -1610,7 +931,10 @@
                 if (isBeat) {
                     if (bass > 0.2 && state.cameraShake < 1) { state.flashIntensity = bass * 1.5; state.cameraShake = bass * 3.0; bloomPass.strength = 1.2 + bass * 4.0; rgbShiftPass.uniforms['amount'].value = bass * 0.02; state.targetFov = 73; }
                     if (state.isAutoMode && state.bassHitTimer === 0 && bass > 0.5) {
-                        state.bassHitTimer = 120; let nextScene = state.currentScene; while(nextScene === state.currentScene) nextScene = Math.floor(Math.random() * 16);
+                        state.bassHitTimer = 120;
+                        const names = sceneFactory.getSceneNames();
+                        let nextScene = state.currentScene; 
+                        while(nextScene === state.currentScene) nextScene = Math.floor(Math.random() * names.length);
                         switchScene(nextScene); state.flashIntensity = 3.0; state.cameraShake = 5.0; bloomPass.strength = 4.0; rgbShiftPass.uniforms['amount'].value = 0.06; rgbShiftPass.uniforms['angle'].value = Math.random() * Math.PI * 2; state.targetFov = 45; state.cameraOrbitSpeed = (Math.random() > 0.5 ? 1 : -1) * (0.01 + Math.random() * 0.02);
                     }
                 }
@@ -1625,121 +949,7 @@
             const getExaggeratedVal = (rawVal) => state.isPlaying ? Math.pow(Math.max(0, Math.min(1, (rawVal - 15) / 160)), 2.5) : 0;
             const vBass = (state.sBass || 0) * s, hue = state.hueOffset % 1.0, invHue = (state.hueOffset + 0.5) % 1.0;
 
-            switch (state.currentScene) {
-                case 0: particlesMesh.rotation.y += (0.001 + ((state.sTreble||0) * 0.04)) * r; particlesMesh.rotation.x += 0.0005 * r; particlesMesh.scale.setScalar(1 + vBass * 2.5); particlesMaterial.color.setHSL(hue, 0.8, 0.6); particlesGeometry.setDrawRange(0, Math.floor(18000 * d)); break;
-                case 1: 
-                    geoCoreMesh.rotation.x += 0.01 * r; geoCoreMesh.rotation.y += 0.015 * r; geoCoreMesh.scale.setScalar(geoCoreMesh.scale.x + ((1 + vBass * 3.5) * s - geoCoreMesh.scale.x) * 0.3); geoCoreMat.emissive.setHSL(hue, 1.0, 0.3 + vBass * 0.7);
-                    geoMidMesh.rotation.x -= 0.012 * r; geoMidMesh.rotation.y += 0.008 * r; geoMidMesh.scale.setScalar(geoMidMesh.scale.x + ((1 + (state.sMid || 0) * 2.0) * s - geoMidMesh.scale.x) * 0.2); geoMidMat.color.setHSL(invHue, 0.8, 0.5); geoMidMat.emissiveIntensity = vBass * 3.0;
-                    geoOuterMesh.rotation.x += 0.005 * r; geoOuterMesh.rotation.z -= 0.005 * r; geoOuterMesh.scale.setScalar(geoOuterMesh.scale.x + ((1 + (state.sTreble || 0) * 1.5) * s - geoOuterMesh.scale.x) * 0.1); geoOuterMat.color.setHSL((hue + 0.3) % 1.0, 0.8, 0.5); geoOuterMat.opacity = 0.15 + vBass * 0.4;
-                    const maxDebris = Math.floor(80 * d);
-                    geoDebrisList.forEach((debris, i) => {
-                        debris.visible = i < maxDebris; if(!debris.visible) return;
-                        const dataVal = getExaggeratedVal(state.dataArray[(i * 3) % 120]); debris.rotation.x += debris.userData.rx * r; debris.rotation.y += debris.userData.ry * r;
-                        const nextDist = debris.position.length() + (debris.userData.baseDist * (1 + vBass * 0.7) * s - debris.position.length()) * 0.2; if (nextDist > 0.01) debris.position.setLength(nextDist);
-                        debris.scale.setScalar(s * (0.5 + dataVal * 3.0)); debris.material.color.setHSL((hue + i*0.01) % 1.0, 1.0, 0.5 + dataVal*0.5); if(!debris.material.wireframe) debris.material.emissive.setHSL(invHue, 1.0, dataVal);
-                    }); break;
-                case 2:
-                    groups[2].rotation.z += (0.01 + (treble * 0.08)) * r; const currentRingsCount = Math.max(1, Math.floor(90 * d)); const ringZSpeed = (0.5 + (volume * 4)) * r;
-                    rings.forEach((ring, index) => {
-                        ring.visible = index < currentRingsCount; if(!ring.visible) return;
-                        ring.position.z += ringZSpeed; if(ring.position.z > 10) ring.position.z = -currentRingsCount * 10;
-                        ring.material.opacity = Math.min(1, (ring.position.z + (currentRingsCount * 10)) / 100); ring.material.color.setHSL(((hue + (index*0.02)) % 1.0), 1.0, 0.4 + (vBass*0.5));
-                        ring.scale.setScalar(ring.scale.x + ((1 + getExaggeratedVal(state.dataArray[index % 120]) * 2.5) * s - ring.scale.x) * 0.4);
-                    }); break;
-                case 3:
-                    groups[3].rotation.z += 0.005 * r; groups[3].rotation.x = Math.sin(timeSec * r) * 0.5; const maxBars = 192 * d;
-                    spectrumBars.forEach((bar, i) => {
-                        bar.visible = i < maxBars; if(!bar.visible) return;
-                        const dataVal = getExaggeratedVal(state.dataArray[(i*2) % 120]); bar.scale.y += ((0.2 + dataVal * 45) * s - bar.scale.y) * 0.4;
-                        bar.material.color.setHSL((hue + i*0.015625) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = dataVal * 12.0;
-                    }); break;
-                case 4:
-                    terrainMesh.position.z += (0.2 + (bass * 0.8)) * r; if(terrainMesh.position.z > 20) terrainMesh.position.z = 0; terrainMesh.scale.setScalar(s);
-                    const positions = terrainGeo.attributes.position.array;
-                    for(let i=0, len=positions.length; i<len; i+=3) { positions[i+2] += (getExaggeratedVal(state.dataArray[((i * 0.333333) | 0) % 120]) * 50 * s - positions[i+2]) * 0.4; }
-                    terrainGeo.attributes.position.needsUpdate = true; terrainMat.color.setHSL(hue, 1.0, 0.5); terrainMat.emissive.setHSL(invHue, 1.0, vBass * 0.8); terrainMat.emissiveIntensity = 2.0; break;
-                case 5:
-                    groups[5].rotation.x += 0.01 * r; groups[5].rotation.y += 0.02 * r; groups[5].scale.setScalar((1 + bass * 2.0) * s); const maxSpikes = 120 * d;
-                    spikes.forEach((spike, i) => {
-                        spike.visible = i < maxSpikes; if(!spike.visible) return;
-                        spike.scale.y += ((1 + getExaggeratedVal(state.dataArray[(i*2) % 120]) * 6) - spike.scale.y) * 0.4; spike.material.color.setHSL((hue + i*0.025) % 1.0, 1.0, 0.5); 
-                    }); break;
-                case 6:
-                    groups[6].rotation.y += (0.01 + (mid * 0.1)) * r; groups[6].rotation.z = Math.sin(timeSec * r) * 0.2; groups[6].rotation.x = Math.cos(timeSec * 0.5 * r) * 0.1;
-                    const pillar = groups[6].children[0]; pillar.material.color.setHSL((hue + 0.5) % 1.0, 1.0, 0.5); pillar.material.opacity = 0.05 + (bass * 0.25); pillar.scale.setScalar((1 + bass * 0.5) * s);
-                    const maxHelices = Math.floor(360 * d); const strandOffset = (Math.PI * 2) / 3;
-                    helixSpheres.forEach((sphere) => {
-                        const i = sphere.userData.index; sphere.visible = i < maxHelices; if(!sphere.visible) return;
-                        const dataVal = getExaggeratedVal(state.dataArray[i % 120]); const strand = sphere.userData.strand;
-                        const y = ((i % 120) - 60) * 1.0 * s; const angle = (i * 0.15) + (timeSec * 1.5 * r) + (strand * strandOffset); const radius = (12 + Math.sin(timeSec * 2 + y * 0.1) * 2 + (dataVal * 6)) * s;
-                        sphere.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
-                        sphere.scale.setScalar(sphere.scale.x + ((0.5 + dataVal * 4.0 + (bass * 1.5)) * s - sphere.scale.x) * 0.3);
-                        const localHue = (hue + (i * 0.005) + (strand * 0.15)) % 1.0; sphere.material.color.setHSL(localHue, 1.0, 0.5); sphere.material.emissive.setHSL(localHue, 1.0, dataVal * 1.5);
-                    }); break;
-                case 7:
-                    groups[7].rotation.x += 0.005 * r; groups[7].rotation.y += 0.01 * r; const maxCubes = 343 * d;
-                    matrixCubes.forEach((cube, i) => {
-                        cube.visible = i < maxCubes; if(!cube.visible) return;
-                        const dataVal = getExaggeratedVal(state.dataArray[i % 120]); cube.scale.setScalar(cube.scale.x + ((0.2 + dataVal * 5.0) * s - cube.scale.x) * 0.4);
-                        const rotAdd = dataVal * 0.3 * r; cube.rotation.x += rotAdd; cube.rotation.y += rotAdd; cube.material.color.setHSL((hue + dataVal) % 1.0, 1.0, 0.5);
-                    }); break;
-                case 8:
-                    const maxGyro = 15 * d;
-                    gyroRings.forEach((ring, i) => {
-                        ring.visible = i < maxGyro; if(!ring.visible) return; const layer = i % 5;
-                        ring.rotation.x += (0.01 * (layer+1) + ((state.sTreble||0) * 0.1)) * r; ring.rotation.y += (0.015 * (5-layer) + ((state.sMid||0) * 0.1)) * r;
-                        ring.scale.setScalar((1 + ((state.sBass||0) * 0.6 * (layer+1))) * s); ring.material.color.setHSL((hue + i*0.2) % 1.0, 1.0, 0.5); 
-                    }); break;
-                case 9:
-                    starburstLines.rotation.z += 0.01 * r; starburstLines.rotation.y += 0.005 * r;
-                    const currentScale = (1 + ((state.sBass||0) * 4)) * s; const maxLines = Math.floor(600 * d); starburstGeo.setDrawRange(0, maxLines * 2); const sbPos = starburstGeo.attributes.position.array;
-                    for(let i=0; i<maxLines; i++) {
-                        const dataVal = getExaggeratedVal(state.dataArray[i % 120]); const baseR = 20 * currentScale * (dataVal + 0.2); const idx = i * 6; 
-                        const theta = Math.atan2(sbPos[idx+4], sbPos[idx+3]); const phi = Math.acos(sbPos[idx+5] / Math.sqrt(sbPos[idx+3]**2 + sbPos[idx+4]**2 + sbPos[idx+5]**2) || 1);
-                        sbPos[idx+3] = baseR * Math.sin(phi) * Math.cos(theta); sbPos[idx+4] = baseR * Math.sin(phi) * Math.sin(theta); sbPos[idx+5] = baseR * Math.cos(phi);
-                    }
-                    starburstGeo.attributes.position.needsUpdate = true; starburstLines.material.color.setHSL(hue, 1.0, 0.6); break;
-                case 10:
-                    knotMesh.rotation.x += (0.01 + ((state.sMid||0) * 0.08)) * r; knotMesh.rotation.y += (0.02 + ((state.sTreble||0) * 0.08)) * r; knotMesh.scale.setScalar((1 + (state.sBass||0) * 2.5) * s);
-                    knotMesh.material.color.setHSL(invHue, 1.0, 0.5); knotMesh.material.emissive.setHSL(hue, 1.0, Math.min(1, vBass * 1.0)); break;
-                case 11:
-                    groups[11].rotation.y += (0.05 + ((state.sVol||0) * 0.15)) * r; groups[11].position.y = Math.sin(timeSec * r) * 15 * vBass;
-                    vortexMesh.scale.setScalar((1 + (state.sBass||0) * 2.0) * s); vortexGeo.setDrawRange(0, Math.floor(9000 * d)); vortexMesh.material.color.setHSL(hue, 0.9, 0.6); break;
-                case 12:
-                    groups[12].rotation.y = Math.sin(timeSec * 0.5 * r) * 0.5; groups[12].rotation.x = Math.sin(timeSec * r) * 0.2; const maxDiscs = 24 * d;
-                    discs.forEach((disc, i) => {
-                        disc.visible = i < maxDiscs; if(!disc.visible) return; const dataVal = getExaggeratedVal(state.dataArray[(i*4) % 120]);
-                        disc.rotation.z += (0.01 + dataVal*0.15) * r; disc.position.y = ((i % 8) - 3.5) * (4 + bass * 12) * s;
-                        disc.scale.setScalar(disc.scale.x + ((1 + dataVal * 1.8) * s - disc.scale.x) * 0.4); disc.material.color.setHSL((hue + i*0.125) % 1.0, 1.0, 0.5); 
-                    }); break;
-                case 13:
-                    groups[13].rotation.y += 0.005 * r; groups[13].rotation.z = Math.sin(timeSec * r) * 0.2; const maxRibbons = Math.max(1, 5 * d); const pi2 = Math.PI * 2;
-                    ribbons.forEach((ribbonObj, idx) => {
-                        ribbonObj.mesh.visible = idx < maxRibbons; if(!ribbonObj.mesh.visible) return; const ribPos = ribbonObj.mesh.geometry.attributes.position.array;
-                        for(let i=0; i<256; i++) {
-                            const dataVal = getExaggeratedVal(state.dataArray[(i + idx * 10) % 120]); const angle = (i * 0.00390625) * pi2; const targetR = (ribbonObj.baseRadius + dataVal * 35 * s) * s; const posIdx = i * 3;
-                            const currentR = Math.sqrt(ribPos[posIdx]**2 + ribPos[posIdx+2]**2); const nextR = currentR + (targetR - currentR) * 0.4;
-                            ribPos[posIdx] = Math.cos(angle) * nextR; ribPos[posIdx+1] += (dataVal * 35 * s * (idx % 2 === 0 ? 1 : -1) - ribPos[posIdx+1]) * 0.5; ribPos[posIdx+2] = Math.sin(angle) * nextR;
-                        }
-                        ribbonObj.mesh.geometry.attributes.position.needsUpdate = true; ribbonObj.mesh.material.color.setHSL((hue + idx*0.1) % 1.0, 1.0, 0.6);
-                    }); break;
-                case 14:
-                    groups[14].rotation.y -= 0.01 * r; const maxEqBars = 128 * d; const pi2Eq = Math.PI * 2;
-                    eqRingBars.forEach((bar, i) => {
-                        bar.visible = i < maxEqBars; if(!bar.visible) return; const dataVal = getExaggeratedVal(state.dataArray[i % 120]);
-                        bar.scale.y += (Math.max(0.1, dataVal * 60 * s) - bar.scale.y) * 0.4; bar.scale.x = s; bar.scale.z = s; bar.position.y = (bar.scale.y * 0.5) - 10 * s; 
-                        const angle = (i * 0.0078125) * pi2Eq; bar.position.x = Math.cos(angle) * 25 * s; bar.position.z = Math.sin(angle) * 25 * s;
-                        bar.material.color.setHSL((hue + i*0.0078125) % 1.0, 1.0, 0.5); bar.material.emissiveIntensity = dataVal * 6.0;
-                    }); break;
-                case 15:
-                    groups[15].rotation.x += 0.01 * r; groups[15].rotation.y += 0.015 * r; core.scale.setScalar((1 + vBass * 2.5) * s); core.material.color.setHSL(hue, 1.0, 0.8); const maxCrystals = 80 * d;
-                    crystals.forEach((crystal, i) => {
-                        crystal.visible = i < maxCrystals; if(!crystal.visible) return; const dataVal = getExaggeratedVal(state.dataArray[(i*2) % 120]);
-                        crystal.scale.y += ((1 + dataVal * 8) * s - crystal.scale.y) * 0.4; crystal.scale.x = s; crystal.scale.z = s;
-                        crystal.position.setFromSphericalCoords((8 + dataVal * 6) * s, crystal.userData.phi, crystal.userData.theta);
-                        crystal.material.color.setHSL((invHue + i*0.0125) % 1.0, 1.0, 0.5); crystal.material.emissiveIntensity = dataVal * 8.0;
-                    }); break;
-            }
+            sceneFactory.updateCurrentScene(0.016);
             
             if (Math.abs(camera.fov - state.targetFov) > 0.1) { camera.fov += (state.targetFov - camera.fov) * 0.1; camera.updateProjectionMatrix(); }
             state.targetFov += (state.baseFov - state.targetFov) * 0.05;
@@ -1806,271 +1016,15 @@
             renderer.clearDepth(); 
             renderer.render(lyricsScene, camera); 
 
-            if (state.isRecording && state.videoEncoder && state.videoEncoder.state === 'configured') {
-                // 【修復】限制編碼佇列數量，防止超高解析度吃光記憶體
-                if (state.videoEncoder.encodeQueueSize > 5) return;
-
-                const now = performance.now();
-                const frameIntervalMs = 1000 / state.recordTargetFps;
-                
-                // 【終極修復】放棄人工補幀，改用絕對真實時間軸 (VFR 動態幀率)
-                // 只要現實時間達到間隔，就抓取一幀並蓋上絕對時間戳，保證長度與音樂 100% 同步！
-                if (now - state.lastRecordFrameTime >= frameIntervalMs) {
-                    state.lastRecordFrameTime = now;
-                    const elapsedMs = now - state.recordingStartTime;
-                    const timestampUs = Math.floor(elapsedMs * 1000);
-                    
-                    const sw = renderer.domElement.width; const sh = renderer.domElement.height;
-                    const tw = state.recordCanvas.width; const th = state.recordCanvas.height;
-                    const sRatio = sw / sh; const tRatio = tw / th;
-                    let cropW = sw, cropH = sh, cropX = 0, cropY = 0;
-                    if (sRatio > tRatio) { cropW = sh * tRatio; cropX = (sw - cropW) / 2; } 
-                    else { cropH = sw / tRatio; cropY = (sh - cropH) / 2; }
-
-                    // 強制開啟超採樣平滑，保留高畫質細節
-                    state.recordCtx.imageSmoothingEnabled = true;
-                    state.recordCtx.imageSmoothingQuality = 'high';
-                    state.recordCtx.fillStyle = 'black';
-                    state.recordCtx.fillRect(0, 0, tw, th);
-                    state.recordCtx.drawImage(renderer.domElement, cropX, cropY, cropW, cropH, 0, 0, tw, th);
-
-                    const frame = new VideoFrame(state.recordCanvas, { timestamp: timestampUs });
-                    const insertKeyframe = (state.recordedFrames % state.recordTargetFps === 0);
-                    
-                    try { state.videoEncoder.encode(frame, { keyFrame: insertKeyframe }); } 
-                    catch(e) { console.error('影片編碼錯誤:', e); }
-                    
-                    frame.close();
-                    state.recordedFrames++;
-                }
-            }
+            captureFrame(renderer.domElement);
         }
+        switchScene(0);
         animate();
 
         // ==========================================
         // 6. WebCodecs 超強前端直出 MP4 封裝系統
         // ==========================================
-        async function startRecording() {
-            if (typeof VideoEncoder === 'undefined') return showStatus('⚠️ 您的瀏覽器太舊不支援新一代高畫質 WebCodecs 引擎，請使用最新版 Chrome 或 Edge。');
-            if (state.isMicMode && !state.isPlaying) return showStatus('請先啟動現場收音再開始錄製');
-
-            initAudioContext();
-            if (!state.isMicMode && !state.mediaStreamDestination && state.audioContext && state.audioContext.createMediaStreamDestination) {
-                state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
-            }
-
-            const wasPlaying = state.isPlaying;
-            let currentOffset = 0;
-            if (!state.isMicMode && state.audioBuffer) currentOffset = (ui.progressSlider.value / 100) * state.audioDuration || 0;
-            
-            const quality = document.getElementById('export-quality').value; 
-            const ratio = document.getElementById('export-ratio').value;
-            const isFast = quality === 'fast';
-            const fps = isFast ? 30 : 60;
-            state.recordTargetFps = fps; 
-            
-            state.recordCanvas = document.createElement('canvas');
-            
-            let rawW, rawH;
-            const baseRes = isFast ? 720 : 1080;
-            if (ratio === '16:9') { rawW = Math.round((baseRes * 16) / 9); rawH = baseRes; }
-            else if (ratio === '9:16') { rawW = baseRes; rawH = Math.round((baseRes * 16) / 9); }
-            else {
-                const ar = window.innerWidth / window.innerHeight;
-                if (ar > 1) { rawH = baseRes; rawW = Math.round(baseRes * ar); }
-                else { rawW = baseRes; rawH = Math.round(baseRes / ar); }
-            }
-
-            // 【穩定性修復】嚴格限制 Canvas 最大解析度，防止 1080p 設定在超寬螢幕下解析度暴衝，導致硬體編碼器直接崩潰
-            const maxW = isFast ? 1280 : 1920;
-            const maxH = isFast ? 720 : 1080;
-            let W = rawW, H = rawH;
-            if (rawW > maxW || rawH > maxH) {
-                const scale = Math.min(maxW / rawW, maxH / rawH);
-                W = Math.round(rawW * scale);
-                H = Math.round(rawH * scale);
-            }
-
-            W = Math.floor(W / 2) * 2; H = Math.floor(H / 2) * 2; 
-            state.recordCanvas.width = W; state.recordCanvas.height = H;
-            state.recordCtx = state.recordCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
-
-            state.hasAudioTrack = false;
-            let audioTrack = null;
-            if (state.isMicMode && state.micStream) { audioTrack = state.micStream.getAudioTracks()[0]; } 
-            else if (!state.isMicMode && state.mediaStreamDestination) { audioTrack = state.mediaStreamDestination.stream.getAudioTracks()[0]; }
-            
-            if (audioTrack && typeof MediaStreamTrackProcessor !== 'undefined') {
-                state.hasAudioTrack = true;
-            } else if (audioTrack) {
-                showStatus('⚠️ 您的瀏覽器不支援高畫質音軌擷取，將導出無聲影片。建議改用最新版 Chrome。');
-            }
-
-            let audioSampleRate = 44100;
-            let audioChannels = 2;
-            if (state.hasAudioTrack) {
-                const settings = audioTrack.getSettings();
-                audioSampleRate = settings.sampleRate || state.audioContext.sampleRate || 44100;
-                audioChannels = settings.channelCount || 2;
-            }
-
-            let firstAudioTs = null;
-
-            try {
-                state.muxer = new Mp4Muxer.Muxer({
-                    target: new Mp4Muxer.ArrayBufferTarget(),
-                    video: { codec: 'avc', width: W, height: H },
-                    audio: state.hasAudioTrack ? { codec: 'aac', sampleRate: audioSampleRate, numberOfChannels: audioChannels } : undefined,
-                    fastStart: 'in-memory'
-                });
-
-                // 【畫質與相容性雙重修復】解除 realtime 限制換取極致畫質，並為 1080p 分配 Level 5.0 防止編碼器報錯
-                const codecString = isFast ? 'avc1.4D002A' : 'avc1.640032';
-
-                state.videoEncoder = new VideoEncoder({
-                    output: (chunk, meta) => state.muxer.addVideoChunk(chunk, meta),
-                    error: e => console.error('VideoEncoder error:', e)
-                });
-                state.videoEncoder.configure({
-                    codec: codecString, 
-                    width: W, height: H,
-                    bitrate: isFast ? 15_000_000 : 35_000_000, // 碼率巨幅提升，徹底殺死高頻馬賽克
-                    framerate: fps,
-                    bitrateMode: 'variable', // 允許變動碼率對付複雜場景
-                    latencyMode: 'quality'   // 強制畫質優先
-                });
-
-                state.isRecording = true; 
-
-                if (state.hasAudioTrack) {
-                    state.audioEncoder = new AudioEncoder({
-                        output: (chunk, meta) => {
-                            if (firstAudioTs === null) firstAudioTs = chunk.timestamp;
-                            
-                            const buffer = new ArrayBuffer(chunk.byteLength);
-                            chunk.copyTo(buffer);
-                            
-                            const chunkConfig = {
-                                type: chunk.type,
-                                timestamp: chunk.timestamp - firstAudioTs, // 手動校正零時偏差
-                                data: buffer
-                            };
-                            if (chunk.duration !== null) chunkConfig.duration = chunk.duration;
-                            
-                            const alignedChunk = new EncodedAudioChunk(chunkConfig);
-                            state.muxer.addAudioChunk(alignedChunk, meta);
-                        },
-                        error: e => console.error('AudioEncoder error:', e)
-                    });
-                    state.audioEncoder.configure({
-                        codec: 'mp4a.40.2', 
-                        sampleRate: audioSampleRate,
-                        numberOfChannels: audioChannels,
-                        bitrate: 192_000 
-                    });
-
-                    state.audioTrackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
-                    state.audioReader = state.audioTrackProcessor.readable.getReader();
-
-                    const readAudio = async () => {
-                        try {
-                            while (state.isRecording) {
-                                const { done, value } = await state.audioReader.read();
-                                if (done) break;
-                                if (value) {
-                                    if (state.audioEncoder && state.audioEncoder.state === 'configured') {
-                                        state.audioEncoder.encode(value);
-                                    }
-                                    value.close(); 
-                                }
-                            }
-                        } catch (e) { 
-                        }
-                    };
-                    readAudio();
-                }
-
-            } catch (e) {
-                state.isRecording = false; 
-                console.error(e); return showStatus('錄影引擎初始化失敗，可能是您的設備不支援此編碼規格。');
-            }
-
-            state.recordedFrames = 0;
-            state.recordingStartTime = performance.now(); state.recordingStartTimeReal = Date.now();
-            state.lastRecordFrameTime = 0; // 【初始化】確保第一幀立即觸發
-            showStatus('✨ 極致畫質引擎運轉中 (錄製已開始)...');
-
-            ui.recordInner.classList.remove('rounded-full', 'w-4', 'h-4'); ui.recordInner.classList.add('rounded-sm', 'w-6', 'h-6'); ui.recordCircle.classList.add('animate-pulse');
-            const btnTextSpan = ui.recordText.querySelector('span:first-child'); btnTextSpan.textContent = '停止錄製';
-            const timerEl = document.getElementById('record-timer'); timerEl.classList.remove('hidden'); 
-            
-            state.recordingInterval = setInterval(() => {
-                const elapsed = Date.now() - state.recordingStartTimeReal;
-                if (elapsed >= state.maxRecordTimeMs) { stopRecording(); showStatus('已達最大錄製時間 (60分鐘)，系統自動停止。', 6000); return; }
-                const secs = Math.floor((elapsed / 1000) % 60).toString().padStart(2, '0'); const mins = Math.floor(elapsed / 60000).toString().padStart(2, '0');
-                
-                let displayTime = `${mins}:${secs}`;
-                if (mins >= 60) {
-                    const hrs = Math.floor(mins / 60); const remMins = (mins % 60).toString().padStart(2, '0'); displayTime = `${hrs}:${remMins}:${secs}`;
-                }
-                timerEl.textContent = `${displayTime} / 60:00`;
-            }, 1000);
-
-            if (!state.isMicMode && state.audioBuffer && !wasPlaying) { setTimeout(() => { playAudio(currentOffset); }, 100); }
-        }
-
-        async function stopRecording() {
-            if (state.isRecording) {
-                state.isRecording = false;
-                ui.recordInner.classList.remove('rounded-sm', 'w-6', 'h-6'); ui.recordInner.classList.add('rounded-full', 'w-4', 'h-4'); ui.recordCircle.classList.remove('animate-pulse');
-                const btnTextSpan = ui.recordText.querySelector('span:first-child'); btnTextSpan.textContent = '開始錄製';
-                clearInterval(state.recordingInterval); const timerEl = document.getElementById('record-timer'); timerEl.classList.add('hidden'); timerEl.textContent = '00:00 / 60:00';
-
-                showStatus('正在極速封裝 MP4 (100% 前端處理)...');
-                ui.loadingOverlay.classList.remove('hidden'); ui.loadingOverlay.style.display = 'flex';
-
-                try {
-                    if (state.audioReader) { 
-                        try { await state.audioReader.cancel(); } catch(e){} 
-                        state.audioReader = null; 
-                    }
-                    
-                    // 【安全鎖修復】在 flush 之前嚴格檢查編碼器狀態，防止呼叫已經 Closed 的編碼器而當機
-                    if (state.videoEncoder) {
-                        if (state.videoEncoder.state === 'configured') {
-                            try { await state.videoEncoder.flush(); } catch(e) { console.error('Video Flush Error:', e); }
-                        }
-                        state.videoEncoder.close();
-                    }
-                    if (state.audioEncoder) {
-                        if (state.audioEncoder.state === 'configured') {
-                            try { await state.audioEncoder.flush(); } catch(e) { console.error('Audio Flush Error:', e); }
-                        }
-                        state.audioEncoder.close();
-                    }
-
-                    state.muxer.finalize();
-                    const buffer = state.muxer.target.buffer;
-                    const blob = new Blob([buffer], { type: 'video/mp4' });
-                    
-                    downloadBlob(blob, 'visualizer_pro.mp4');
-                    showStatus('🎉 無損高畫質 MP4 導出成功！');
-
-                } catch (e) {
-                    console.error(e); showStatus('封裝失敗: ' + e.message);
-                } finally {
-                    ui.loadingOverlay.classList.add('hidden'); ui.loadingOverlay.style.display = 'none';
-                    state.muxer = null; state.videoEncoder = null; state.audioEncoder = null; state.audioTrackProcessor = null;
-                }
-            }
-        }
-
         ui.recordBtn.addEventListener('click', () => { state.isRecording ? stopRecording() : startRecording(); });
-
-        function downloadBlob(blob, filename) {
-            const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = filename;
-            document.body.appendChild(a); a.click(); setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
-        }
     </script>
     <footer class="container mx-auto px-4">
         <div class="border-t border-gray-700 mt-16 py-8 text-gray-400 text-sm text-center">
