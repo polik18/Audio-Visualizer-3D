@@ -1176,6 +1176,16 @@
             state.textTextureRatio = repeatY;
 
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+            
+            // 【優化】新增：純文字模式的漸層暗化遮罩，增強歌詞對比度
+            const bgGrad = textCtx.createLinearGradient(0, 0, textCanvas.width, 0);
+            bgGrad.addColorStop(0, 'rgba(0,0,0,0)');
+            bgGrad.addColorStop(0.2, 'rgba(0,0,0,0.65)');
+            bgGrad.addColorStop(0.8, 'rgba(0,0,0,0.65)');
+            bgGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            textCtx.fillStyle = bgGrad;
+            textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height);
+
             textCtx.textAlign = "center"; textCtx.textBaseline = "middle"; 
 
             let baseStartY = state.isMicMode ? (actualHeight - (currentOffsetY * contentScale)) / 2 : topPadding * contentScale;
@@ -1186,9 +1196,14 @@
                 const scaledSize = line.size * contentScale;
                 textCtx.font = `bold ${scaledSize}px 'Segoe UI', sans-serif`;
                 
-                textCtx.lineWidth = scaledSize * 0.08;
-                textCtx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+                // 【優化】增強文字的外框厚度與立體陰影
+                textCtx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                textCtx.shadowBlur = scaledSize * 0.2;
+                textCtx.lineWidth = scaledSize * 0.12;
+                textCtx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
                 textCtx.strokeText(line.text, textCanvas.width / 2, y);
+                
+                textCtx.shadowBlur = 0; // 重置陰影避免影響本體填充
                 textCtx.fillStyle = "white";
                 textCtx.fillText(line.text, textCanvas.width / 2, y);
             }
@@ -1224,6 +1239,17 @@
             state.lastRenderPopScale = popScale; state.textDirty = false;
 
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+            
+            // 【優化】新增：LRC模式的圓形聚光燈暗化層，確保中央歌詞永遠清晰
+            const cx = textCanvas.width / 2;
+            const cy = textCanvas.height / 2;
+            const bgGrad = textCtx.createRadialGradient(cx, cy, 0, cx, cy, textCanvas.height * 0.6);
+            bgGrad.addColorStop(0, 'rgba(0,0,0,0.75)');
+            bgGrad.addColorStop(0.5, 'rgba(0,0,0,0.4)');
+            bgGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            textCtx.fillStyle = bgGrad;
+            textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height);
+
             textCtx.textAlign = "center"; textCtx.textBaseline = "middle";
 
             for (let i = 0; i < state.lrcLines.length; i++) {
@@ -1238,10 +1264,15 @@
                     let opacity = isActive ? 1 : Math.max(0.1, 0.5 - dist * 0.1);
 
                     textCtx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
-                    textCtx.lineWidth = fontSize * 0.08;
-                    textCtx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.8})`;
+                    
+                    // 【優化】極大化外框粗細度與擴散陰影，杜絕強光干擾
+                    textCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
+                    textCtx.shadowBlur = 20;
+                    textCtx.lineWidth = fontSize * 0.15;
+                    textCtx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.95})`;
                     textCtx.strokeText(line.text, textCanvas.width / 2, y);
 
+                    textCtx.shadowBlur = 0;
                     textCtx.fillStyle = isActive ? `rgba(255, 255, 255, ${opacity})` : `rgba(200, 200, 200, ${opacity})`;
                     textCtx.fillText(line.text, textCanvas.width / 2, y);
                 }
@@ -1699,9 +1730,9 @@
                     state.analyser = state.audioContext.createAnalyser();
                     state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; 
                     state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
-                    if (state.audioContext.createMediaStreamDestination) {
-                        state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
-                    }
+                }
+                if (!state.mediaStreamDestination && state.audioContext.createMediaStreamDestination) {
+                    state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
                 }
                 if (!state.tunerAnalyser) {
                     state.tunerAnalyser = state.audioContext.createAnalyser();
@@ -1753,9 +1784,9 @@
                 state.analyser = state.audioContext.createAnalyser(); 
                 state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4;
                 state.dataArray = new Uint8Array(state.analyser.frequencyBinCount);
-                if (state.audioContext.createMediaStreamDestination) {
-                    state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
-                }
+            }
+            if (!state.mediaStreamDestination && state.audioContext.createMediaStreamDestination) {
+                state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
             }
             if (!state.tunerAnalyser) {
                 state.tunerAnalyser = state.audioContext.createAnalyser(); 
@@ -1860,6 +1891,23 @@
             
             ui.playIcon.classList.remove('hidden'); ui.pauseIcon.classList.add('hidden'); ui.playText.textContent = '播放 MP3';
         }
+
+        // 【優化】全局 Ctrl+V 貼上歌詞支援
+        document.addEventListener('paste', (e) => {
+            // 如果當前焦點已經是輸入框，讓瀏覽器預設行為處理，避免重複貼上
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            if (activeTag === 'input' || activeTag === 'textarea') return;
+
+            const clipboardData = e.clipboardData || window.clipboardData;
+            const pastedText = clipboardData.getData('text');
+
+            if (pastedText && pastedText.trim() !== '') {
+                e.preventDefault();
+                ui.lyricsInput.value = pastedText;
+                parseLyrics(pastedText);
+                showStatus('📋 已從剪貼簿成功載入歌詞！');
+            }
+        });
 
         window.addEventListener('keydown', (e) => {
             // 【優化】優先處理全局 Esc 退出邏輯
@@ -2347,6 +2395,12 @@
                 return showStatus('請先啟動現場收音再開始錄製');
             }
 
+            // 【聲音修復】強制提早初始化音訊導出節點，確保未播放狀態下點擊錄製也能捕捉音軌
+            initAudioContext();
+            if (!state.isMicMode && !state.mediaStreamDestination && state.audioContext && state.audioContext.createMediaStreamDestination) {
+                state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
+            }
+
             // 【流程優化】記錄當前播放狀態與進度。不要在這裡提早觸發播放，避免漏掉開頭的聲音！
             const wasPlaying = state.isPlaying;
             let currentOffset = 0;
@@ -2394,7 +2448,9 @@
 
             const combinedStream = new MediaStream(tracks); 
             const mimeType = getBestMimeType();
-            const options = { mimeType: mimeType, videoBitsPerSecond: 8000000 };
+            
+            // 【畫質修復】將影像碼率提升至 16Mbps (16000000)，確保高動態 3D 畫面不模糊
+            const options = { mimeType: mimeType, videoBitsPerSecond: 16000000 };
             
             try { mediaRecorder = new MediaRecorder(combinedStream, options); } 
             catch (e) { mediaRecorder = new MediaRecorder(combinedStream); }
@@ -2514,11 +2570,13 @@
                     ffmpegArgs.push('-c:v', 'copy');
                     ui.loadingText.textContent = '偵測到 H.264 編碼，執行極速封裝 (無需重轉畫面)...';
                 } else {
-                    ffmpegArgs.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', isFast ? '28' : '23', '-pix_fmt', 'yuv420p');
+                    // 【畫質修復】降低 CRF 壓縮率數值 (28->22, 23->17)，並提升 preset，大幅改善馬賽克問題
+                    ffmpegArgs.push('-c:v', 'libx264', '-preset', 'superfast', '-crf', isFast ? '22' : '17', '-pix_fmt', 'yuv420p');
                     ui.loadingText.textContent = '正在進行高效轉碼 (由於瀏覽器不支援 H.264，此步驟較耗時)...';
                 }
 
-                if (state.hasAudioTrack) ffmpegArgs.push('-c:a', 'aac', '-b:a', isFast ? '128k' : '320k'); 
+                // 【音質修復】同步提升轉碼時的音訊位元率
+                if (state.hasAudioTrack) ffmpegArgs.push('-c:a', 'aac', '-b:a', isFast ? '192k' : '320k'); 
                 ffmpegArgs.push('-movflags', '+faststart', 'output.mp4'); 
                 await ffmpeg.exec(ffmpegArgs);
 
