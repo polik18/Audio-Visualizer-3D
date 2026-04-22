@@ -113,7 +113,6 @@
                     <span id="val-bpm" class="text-xs text-purple-400 w-10">120</span>
                 </div>
                 
-                <!-- 新增：字幕顏色、背景色與透明度獨立控制 -->
                 <div class="flex items-center gap-2 border-t border-gray-700 pt-4 mt-2">
                     <label class="text-[11px] text-gray-300 w-10 text-right">字色</label>
                     <input type="color" id="input-lrc-color" value="#ffffff" class="w-6 h-6 bg-transparent border-0 cursor-pointer p-0 rounded" title="自訂字幕顏色">
@@ -126,7 +125,6 @@
                     <span id="val-lrc-bg-opacity" class="text-[10px] text-purple-400 w-8 text-right">65%</span>
                 </div>
                 
-                <!-- 新增：字與幕雙重隨場景自動換色開關 -->
                 <div class="grid grid-cols-2 gap-2 border-t border-gray-700 pt-3 mt-2">
                     <label class="flex items-center gap-2 cursor-pointer text-[10px] text-white hover:text-purple-300 transition-colors">
                         <input type="checkbox" id="toggle-lrc-auto-color" checked class="rounded border-gray-500 text-purple-500 focus:ring-purple-500 bg-black/50 w-4 h-4 cursor-pointer">
@@ -510,9 +508,9 @@
             isLrcAutoColor: true,
             lrcBgColor: '#000000',
             lrcBgOpacity: 0.65,
-            isLrcBgAutoColor: true, // 新增：幕色自動變色
-            plainTextStartY: 0,     // 記錄純文字位置
-            plainTextHeight: 0,     // 記錄純文字高度
+            isLrcBgAutoColor: true,
+            plainTextStartY: 0,
+            plainTextHeight: 0,
             
             activeControl: null,
             bassHistory: [], 
@@ -648,11 +646,21 @@
             return acted;
         }
 
+        // 【重要修復】無聲心跳機制：強制保持音訊線路活躍，根除 Apple 設備的 -12842 報錯
         function initAudioContext(autoResume = true) {
             if (!state.audioContext) {
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                 try { state.audioContext = new AudioContextClass({ latencyHint: 'playback' }); } 
                 catch(e) { state.audioContext = new AudioContextClass(); }
+
+                state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
+
+                state.silenceOsc = state.audioContext.createOscillator();
+                state.silenceGain = state.audioContext.createGain();
+                state.silenceGain.gain.value = 0; 
+                state.silenceOsc.connect(state.silenceGain);
+                state.silenceGain.connect(state.mediaStreamDestination);
+                state.silenceOsc.start();
             }
             if (autoResume && state.audioContext.state === 'suspended') {
                 state.audioContext.resume();
@@ -981,14 +989,12 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.2); scene.add(ambientLight);
         const pointLight = new THREE.PointLight(0xff00ff, 1, 200); pointLight.position.set(0, 0, 0); scene.add(pointLight);
 
-        // 【雙圖層技術】文字主畫布
         const textCanvas = document.createElement('canvas'); textCanvas.width = 2048; textCanvas.height = 1024; const textCtx = textCanvas.getContext('2d');
         const textTexture = new THREE.CanvasTexture(textCanvas); textTexture.minFilter = THREE.LinearFilter; textTexture.wrapS = THREE.ClampToEdgeWrapping; textTexture.wrapT = THREE.ClampToEdgeWrapping;
         const textMaterial = new THREE.SpriteMaterial({ map: textTexture, transparent: true, depthTest: false }); 
         const textSprite = new THREE.Sprite(textMaterial);
         textSprite.renderOrder = 999; textSprite.scale.set(100, 50, 1); textSprite.position.set(0, 0, 10); lyricsScene.add(textSprite);
 
-        // 【雙圖層技術】遮罩背景畫布
         const bgMaskCanvas = document.createElement('canvas'); bgMaskCanvas.width = 2048; bgMaskCanvas.height = 1024; const bgMaskCtx = bgMaskCanvas.getContext('2d');
         const bgMaskTexture = new THREE.CanvasTexture(bgMaskCanvas); bgMaskTexture.minFilter = THREE.LinearFilter; bgMaskTexture.wrapS = THREE.ClampToEdgeWrapping; bgMaskTexture.wrapT = THREE.ClampToEdgeWrapping;
         const bgMaskMaterial = new THREE.SpriteMaterial({ map: bgMaskTexture, transparent: true, depthTest: false }); 
@@ -999,7 +1005,6 @@
         // 歌詞渲染邏輯
         // ==========================================
         
-        // 繪製動態歌詞專屬的「科幻扁平橢圓光暈遮罩」
         function drawLrcMask() {
             bgMaskCanvas.width = 2048; bgMaskCanvas.height = 1024;
             bgMaskCtx.clearRect(0, 0, 2048, 1024);
@@ -1007,9 +1012,8 @@
             
             bgMaskCtx.save();
             bgMaskCtx.translate(cx, cy);
-            bgMaskCtx.scale(1, 0.2); // 壓扁成優雅的科幻光帶
+            bgMaskCtx.scale(1, 0.2); 
             
-            // 繪製純白遮罩（稍後由 GPU 材質染色）
             const rGrad = bgMaskCtx.createRadialGradient(0, 0, 0, 0, 800);
             rGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
             rGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)');
@@ -1021,7 +1025,6 @@
             bgMaskTexture.needsUpdate = true;
         }
 
-        // 繪製純文字專屬的「邊緣柔化邊框遮罩」
         function drawPlainMask(startY, height) {
             bgMaskCanvas.width = 2048; bgMaskCanvas.height = Math.max(1024, height + 1024);
             bgMaskCtx.clearRect(0, 0, bgMaskCanvas.width, bgMaskCanvas.height);
@@ -1034,7 +1037,7 @@
             hGrad.addColorStop(1, 'rgba(255,255,255,0)');
             
             bgMaskCtx.fillStyle = hGrad;
-            bgMaskCtx.filter = 'blur(40px)'; // 創造超級柔和的無稜界邊框
+            bgMaskCtx.filter = 'blur(40px)'; 
             bgMaskCtx.fillRect(cx - 900, startY - 100, 1800, height + 200);
             bgMaskCtx.filter = 'none';
             bgMaskTexture.needsUpdate = true;
@@ -1065,7 +1068,7 @@
                 state.lrcLines.sort((a, b) => a.time - b.time); state.lrcScrollY = 0; plainTextForFallback = cleanLines.join('\n');
                 textCanvas.height = 1024; textTexture.repeat.set(1, 1); textTexture.offset.y = 0; textSprite.scale.set(100, 50, 1); state.textDirty = true;
                 
-                drawLrcMask(); // 初始化 LRC 模式專屬遮罩
+                drawLrcMask(); 
                 showStatus('LRC 動態歌詞解析成功！'); return;
             }
 
@@ -1099,18 +1102,21 @@
             const repeatY = visibleHeight / actualHeight; textTexture.repeat.set(1, repeatY); textTexture.offset.y = state.isMicMode ? 0 : (1.0 - repeatY); state.textTextureRatio = repeatY;
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
 
+            textCtx.textAlign = "center"; 
+            textCtx.textBaseline = "middle";
+
             let baseStartY = state.isMicMode ? (actualHeight - (currentOffsetY * contentScale)) / 2 : topPadding * contentScale;
             state.plainTextStartY = baseStartY; state.plainTextHeight = currentOffsetY * contentScale;
             
-            drawPlainMask(state.plainTextStartY, state.plainTextHeight); // 繪製純文字模式專屬遮罩
-            bgMaskTexture.repeat.copy(textTexture.repeat); bgMaskTexture.offset.copy(textTexture.offset); // 鎖定背景與文字的連動位移
+            drawPlainMask(state.plainTextStartY, state.plainTextHeight); 
+            bgMaskTexture.repeat.copy(textTexture.repeat); bgMaskTexture.offset.copy(textTexture.offset); 
 
             for (const line of parsedLines) {
                 const actualOffsetY = line.offsetY * contentScale; const y = baseStartY + actualOffsetY; const scaledSize = line.size * contentScale;
                 textCtx.font = `bold ${scaledSize}px 'Segoe UI', sans-serif`;
                 textCtx.shadowColor = 'rgba(0, 0, 0, 0.9)'; textCtx.shadowBlur = scaledSize * 0.2; textCtx.lineWidth = scaledSize * 0.12; textCtx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
                 textCtx.strokeText(line.text, textCanvas.width / 2, y); textCtx.shadowBlur = 0; 
-                textCtx.fillStyle = '#ffffff'; // 固定使用純白渲染，顏色交由 GPU 材質控制
+                textCtx.fillStyle = '#ffffff'; 
                 textCtx.fillText(line.text, textCanvas.width / 2, y);
             }
             textTexture.needsUpdate = true; state.isPureTextDrawn = true; showStatus('純文字歌詞已載入 (單次渲染極速模式 ⚡)');
@@ -1139,7 +1145,7 @@
                     let opacity = isActive ? 1 : Math.max(0.1, 0.5 - dist * 0.1);
                     textCtx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`; textCtx.shadowColor = `rgba(0, 0, 0, ${opacity})`; textCtx.shadowBlur = 20; textCtx.lineWidth = fontSize * 0.15;
                     textCtx.strokeStyle = `rgba(0, 0, 0, ${opacity * 0.95})`; textCtx.strokeText(line.text, textCanvas.width / 2, y); textCtx.shadowBlur = 0;
-                    textCtx.fillStyle = `rgba(255, 255, 255, ${opacity})`; // 固定使用純白渲染，顏色交由 GPU 材質控制
+                    textCtx.fillStyle = `rgba(255, 255, 255, ${opacity})`; 
                     textCtx.fillText(line.text, textCanvas.width / 2, y);
                 }
             }
@@ -1400,7 +1406,6 @@
                 state.micStream = stream; state.source = state.audioContext.createMediaStreamSource(stream);
                 
                 if (!state.analyser) { state.analyser = state.audioContext.createAnalyser(); state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; state.dataArray = new Uint8Array(state.analyser.frequencyBinCount); }
-                if (!state.mediaStreamDestination && state.audioContext.createMediaStreamDestination) state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
                 if (!state.tunerAnalyser) { state.tunerAnalyser = state.audioContext.createAnalyser(); state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize); }
 
                 state.analyser.disconnect(); state.tunerAnalyser.disconnect();
@@ -1432,7 +1437,6 @@
             state.source = state.audioContext.createBufferSource(); state.source.buffer = state.audioBuffer;
             
             if (!state.analyser) { state.analyser = state.audioContext.createAnalyser(); state.analyser.fftSize = 512; state.analyser.smoothingTimeConstant = 0.4; state.dataArray = new Uint8Array(state.analyser.frequencyBinCount); }
-            if (!state.mediaStreamDestination && state.audioContext.createMediaStreamDestination) state.mediaStreamDestination = state.audioContext.createMediaStreamDestination();
             if (!state.tunerAnalyser) { state.tunerAnalyser = state.audioContext.createAnalyser(); state.tunerAnalyser.fftSize = 2048; state.tunerTimeDomainData = new Float32Array(state.tunerAnalyser.fftSize); }
 
             state.analyser.disconnect(); state.tunerAnalyser.disconnect();
@@ -1444,10 +1448,11 @@
             state.source.start(0, offset); 
 
             if (keepPaused && state.audioContext.state === 'running') {
-                state.audioContext.suspend();
+                state.source.onended = null; 
+                state.source.stop(); 
+            } else {
+                state.source.onended = () => { stopAudio(); if(state.isRecording) stopRecording(); };
             }
-
-            state.source.onended = () => { stopAudio(); if(state.isRecording) stopRecording(); };
 
             if (!keepPaused) {
                 state.isPlaying = true;
@@ -1484,14 +1489,22 @@
 
         ui.playBtn.addEventListener('click', async () => {
             initAudioContext(false);
-            if (!state.source && !state.isMicMode) {
+            if (!state.source && !state.isMicMode && !state.isPlaying && state.audioBuffer) {
+                playAudio(state.currentProgress * state.audioDuration || 0);
+            } else if (!state.source && !state.isMicMode) {
                 if(state.metroIsPlaying) return showStatus('目前僅運作節拍器模式'); playAudio(0);
             } else {
-                if (state.audioContext && state.audioContext.state === 'running') {
-                    await state.audioContext.suspend(); state.isPlaying = false;
+                if (state.isPlaying) {
+                    state.isPlaying = false;
+                    if (state.source) {
+                        state.source.onended = null;
+                        state.source.stop();
+                        state.source.disconnect();
+                        state.source = null;
+                    }
                     ui.playIcon.classList.remove('hidden'); ui.pauseIcon.classList.add('hidden'); ui.playText.textContent = '繼續播放'; showPlayPauseOverlay(false);
-                } else if (state.audioContext && state.audioContext.state === 'suspended') {
-                    await state.audioContext.resume(); state.isPlaying = true;
+                } else {
+                    playAudio(state.currentProgress * state.audioDuration || 0);
                     ui.playIcon.classList.add('hidden'); ui.pauseIcon.classList.remove('hidden'); ui.playText.textContent = '暫停'; showPlayPauseOverlay(true); wakeUI();
                 }
             }
@@ -1504,7 +1517,7 @@
                 ui.micBtn.querySelector('div').classList.remove('bg-red-500/50', 'border-red-500'); ui.playBtn.disabled = false; 
             } else { if (state.source) { state.source.onended = null; state.source.stop(); } }
             if (state.source) { state.source.disconnect(); state.source = null; }
-            if (state.audioContext && state.audioContext.state === 'suspended') state.audioContext.resume();
+            
             state.isPlaying = false; state.currentProgress = 0; if (state.isLrcMode) state.lrcScrollY = 0;
             if (!state.isDraggingProgress) { ui.progressSlider.value = 0; ui.timeCurrent.textContent = "0:00"; }
             setUICollapseState(false); wakeUI(); ui.playIcon.classList.remove('hidden'); ui.pauseIcon.classList.add('hidden'); ui.playText.textContent = '播放 MP3';
@@ -1559,14 +1572,13 @@
             requestAnimationFrame(animate);
 
             let bass = 0, mid = 0, treble = 0, volume = 0;
-            // 【優化】將整體基礎旋轉速度降為原本的 20%，讓預設 100% 的動態更加柔和舒適，並提升拉桿微調的精細度
             const s = state.vScale, r = state.vRotation * 0.2, d = state.vDensity, cSpeed = state.vColorSpeed, timeNow = Date.now(), timeSec = timeNow * 0.001;
-            const currentAudioTime = (!state.isMicMode && state.audioContext && state.source) ? state.audioContext.currentTime - state.audioStartTime : 0;
-
-            if (!state.isMicMode && state.audioContext && state.audioDuration) {
+            
+            if (!state.isMicMode && state.audioContext && state.audioDuration && state.isPlaying) {
+                const currentAudioTime = state.audioContext.currentTime - state.audioStartTime;
                 state.currentProgress = Math.max(0, Math.min(1, currentAudioTime / state.audioDuration)); 
                 if (!state.isDraggingProgress) { ui.progressSlider.value = state.currentProgress * 100; ui.timeCurrent.textContent = formatTime(currentAudioTime); }
-            } else if (state.isMicMode) state.currentProgress = 0; 
+            }
 
             if (state.isPlaying && state.analyser) {
                 state.analyser.getByteFrequencyData(state.dataArray);
@@ -1740,7 +1752,6 @@
 
             const cameraDirection = new THREE.Vector3(); camera.getWorldDirection(cameraDirection);
             
-            // 【效能黑科技】利用 GPU 材質染色，零負擔實現文字與遮罩雙重隨場景變色
             textSprite.position.copy(camera.position).add(cameraDirection.multiplyScalar(40));
             textSprite.quaternion.copy(camera.quaternion); 
             if (state.isLrcAutoColor) {
@@ -1752,7 +1763,7 @@
             bgMaskSprite.position.copy(textSprite.position);
             bgMaskSprite.quaternion.copy(textSprite.quaternion);
             if (state.isLrcBgAutoColor) {
-                bgMaskSprite.material.color.setHSL((state.hueOffset % 1.0), 0.8, 0.15); // 產生極具質感的深色環境光暈
+                bgMaskSprite.material.color.setHSL((state.hueOffset % 1.0), 0.8, 0.15);
             } else {
                 bgMaskSprite.material.color.set(state.lrcBgColor);
             }
@@ -1762,7 +1773,7 @@
             else if (state.isPureTextDrawn && !state.isMicMode && state.source) { 
                 const maxOffset = 1.0 - state.textTextureRatio; 
                 textTexture.offset.y = maxOffset * (1.0 - state.currentProgress); 
-                bgMaskTexture.offset.y = maxOffset * (1.0 - state.currentProgress); // 確保純文字遮罩完美聯動
+                bgMaskTexture.offset.y = maxOffset * (1.0 - state.currentProgress); 
             }
             
             if (state.tunerIsActive && state.tunerAnalyser && state.isPlaying && state.audioContext.state === 'running') {
@@ -1793,13 +1804,15 @@
             renderer.render(lyricsScene, camera); 
 
             if (state.isRecording && state.videoEncoder && state.videoEncoder.state === 'configured') {
+                // 【修復】限制編碼佇列數量，防止 1080p 超高解析度吃光記憶體導致 Cannot call 'flush' on a closed codec 崩潰
+                if (state.videoEncoder.encodeQueueSize > 5) return;
+
                 const now = performance.now();
                 const elapsed = now - state.recordingStartTime;
                 const targetFrames = Math.floor((elapsed / 1000) * state.recordTargetFps);
                 
-                while (state.recordedFrames < targetFrames) {
-                    const frameTimeUs = (state.recordedFrames * 1000000) / state.recordTargetFps;
-                    const timestampUs = (state.recordingStartTime * 1000) + frameTimeUs;
+                if (state.recordedFrames < targetFrames) {
+                    const timestampUs = Math.floor((state.recordedFrames * 1000000) / state.recordTargetFps);
                     
                     const sw = renderer.domElement.width; const sh = renderer.domElement.height;
                     const tw = state.recordCanvas.width; const th = state.recordCanvas.height;
@@ -1808,6 +1821,9 @@
                     if (sRatio > tRatio) { cropW = sh * tRatio; cropX = (sw - cropW) / 2; } 
                     else { cropH = sw / tRatio; cropY = (sh - cropH) / 2; }
 
+                    // 【畫質修復】強制開啟超採樣平滑，消除縮放擷取時產生的馬賽克鋸齒
+                    state.recordCtx.imageSmoothingEnabled = true;
+                    state.recordCtx.imageSmoothingQuality = 'high';
                     state.recordCtx.fillStyle = 'black';
                     state.recordCtx.fillRect(0, 0, tw, th);
                     state.recordCtx.drawImage(renderer.domElement, cropX, cropY, cropW, cropH, 0, 0, tw, th);
@@ -1820,6 +1836,11 @@
                     
                     frame.close();
                     state.recordedFrames++;
+
+                    // 【效能防禦鎖】如果算圖落後現實時間太多（超過 5 幀），強制重設時間軸基準點，不允許無限補幀拖垮編碼器
+                    if (targetFrames - state.recordedFrames > 5) {
+                        state.recordingStartTime = now - ((state.recordedFrames * 1000) / state.recordTargetFps);
+                    }
                 }
             }
         }
@@ -1848,17 +1869,28 @@
             state.recordTargetFps = fps; 
             
             state.recordCanvas = document.createElement('canvas');
+            
+            let rawW, rawH;
             const baseRes = isFast ? 720 : 1080;
-            let W, H;
-            if (ratio === '16:9') { W = Math.round((baseRes * 16) / 9); H = baseRes; }
-            else if (ratio === '9:16') { W = baseRes; H = Math.round((baseRes * 16) / 9); }
+            if (ratio === '16:9') { rawW = Math.round((baseRes * 16) / 9); rawH = baseRes; }
+            else if (ratio === '9:16') { rawW = baseRes; rawH = Math.round((baseRes * 16) / 9); }
             else {
                 const ar = window.innerWidth / window.innerHeight;
-                if (ar > 1) { H = baseRes; W = Math.round(baseRes * ar); }
-                else { W = baseRes; H = Math.round(baseRes / ar); }
+                if (ar > 1) { rawH = baseRes; rawW = Math.round(baseRes * ar); }
+                else { rawW = baseRes; rawH = Math.round(baseRes / ar); }
             }
 
-            W = Math.floor(W / 2) * 2; H = Math.floor(H / 2) * 2; // 硬體編碼規範：長寬必須是雙數
+            // 【穩定性修復】嚴格限制 Canvas 最大解析度，防止 1080p 設定在超寬螢幕下解析度暴衝，導致硬體編碼器直接崩潰
+            const maxW = isFast ? 1280 : 1920;
+            const maxH = isFast ? 720 : 1080;
+            let W = rawW, H = rawH;
+            if (rawW > maxW || rawH > maxH) {
+                const scale = Math.min(maxW / rawW, maxH / rawH);
+                W = Math.round(rawW * scale);
+                H = Math.round(rawH * scale);
+            }
+
+            W = Math.floor(W / 2) * 2; H = Math.floor(H / 2) * 2; 
             state.recordCanvas.width = W; state.recordCanvas.height = H;
             state.recordCtx = state.recordCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
 
@@ -1867,41 +1899,73 @@
             if (state.isMicMode && state.micStream) { audioTrack = state.micStream.getAudioTracks()[0]; } 
             else if (!state.isMicMode && state.mediaStreamDestination) { audioTrack = state.mediaStreamDestination.stream.getAudioTracks()[0]; }
             
-            if (audioTrack) state.hasAudioTrack = true;
+            if (audioTrack && typeof MediaStreamTrackProcessor !== 'undefined') {
+                state.hasAudioTrack = true;
+            } else if (audioTrack) {
+                showStatus('⚠️ 您的瀏覽器不支援高畫質音軌擷取，將導出無聲影片。建議改用最新版 Chrome。');
+            }
+
+            let audioSampleRate = 44100;
+            let audioChannels = 2;
+            if (state.hasAudioTrack) {
+                const settings = audioTrack.getSettings();
+                audioSampleRate = settings.sampleRate || state.audioContext.sampleRate || 44100;
+                audioChannels = settings.channelCount || 2;
+            }
+
+            let firstAudioTs = null;
 
             try {
-                // 初始化 15KB 的 Mp4Muxer (取代 30MB 的 FFmpeg)
                 state.muxer = new Mp4Muxer.Muxer({
                     target: new Mp4Muxer.ArrayBufferTarget(),
                     video: { codec: 'avc', width: W, height: H },
-                    audio: state.hasAudioTrack ? { codec: 'aac', sampleRate: audioTrack.getSettings().sampleRate || state.audioContext.sampleRate || 44100, numberOfChannels: audioTrack.getSettings().channelCount || 2 } : undefined,
+                    audio: state.hasAudioTrack ? { codec: 'aac', sampleRate: audioSampleRate, numberOfChannels: audioChannels } : undefined,
                     fastStart: 'in-memory'
                 });
 
-                // 初始化硬體級影片編碼器 (CBR 恆定超高碼率)
+                // 【畫質與相容性雙重修復】解除 realtime 限制換取極致畫質，並為 1080p 分配 Level 5.0 防止編碼器報錯
+                const codecString = isFast ? 'avc1.4D002A' : 'avc1.640032';
+
                 state.videoEncoder = new VideoEncoder({
                     output: (chunk, meta) => state.muxer.addVideoChunk(chunk, meta),
                     error: e => console.error('VideoEncoder error:', e)
                 });
                 state.videoEncoder.configure({
-                    codec: 'avc1.640028', // H.264 High Profile
+                    codec: codecString, 
                     width: W, height: H,
-                    bitrate: isFast ? 10_000_000 : 20_000_000, // 超高碼率，拒絕馬賽克
+                    bitrate: isFast ? 15_000_000 : 35_000_000, // 碼率巨幅提升，徹底殺死高頻馬賽克
                     framerate: fps,
-                    bitrateMode: 'constant'
+                    bitrateMode: 'variable', // 允許變動碼率對付複雜場景
+                    latencyMode: 'quality'   // 強制畫質優先
                 });
 
-                // 初始化硬體級音訊編碼器
+                state.isRecording = true; 
+
                 if (state.hasAudioTrack) {
                     state.audioEncoder = new AudioEncoder({
-                        output: (chunk, meta) => state.muxer.addAudioChunk(chunk, meta),
+                        output: (chunk, meta) => {
+                            if (firstAudioTs === null) firstAudioTs = chunk.timestamp;
+                            
+                            const buffer = new ArrayBuffer(chunk.byteLength);
+                            chunk.copyTo(buffer);
+                            
+                            const chunkConfig = {
+                                type: chunk.type,
+                                timestamp: chunk.timestamp - firstAudioTs, // 手動校正零時偏差
+                                data: buffer
+                            };
+                            if (chunk.duration !== null) chunkConfig.duration = chunk.duration;
+                            
+                            const alignedChunk = new EncodedAudioChunk(chunkConfig);
+                            state.muxer.addAudioChunk(alignedChunk, meta);
+                        },
                         error: e => console.error('AudioEncoder error:', e)
                     });
                     state.audioEncoder.configure({
-                        codec: 'mp4a.40.2', // AAC
-                        sampleRate: audioTrack.getSettings().sampleRate || state.audioContext.sampleRate || 44100,
-                        numberOfChannels: audioTrack.getSettings().channelCount || 2,
-                        bitrate: 320_000 // 錄音室等級音質
+                        codec: 'mp4a.40.2', 
+                        sampleRate: audioSampleRate,
+                        numberOfChannels: audioChannels,
+                        bitrate: 192_000 
                     });
 
                     state.audioTrackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
@@ -1912,19 +1976,25 @@
                             while (state.isRecording) {
                                 const { done, value } = await state.audioReader.read();
                                 if (done) break;
-                                if (state.audioEncoder && state.audioEncoder.state === 'configured') state.audioEncoder.encode(value);
-                                value.close(); // 釋放記憶體非常重要
+                                if (value) {
+                                    if (state.audioEncoder && state.audioEncoder.state === 'configured') {
+                                        state.audioEncoder.encode(value);
+                                    }
+                                    value.close(); 
+                                }
                             }
-                        } catch (e) { console.error('音軌擷取已結束', e); }
+                        } catch (e) { 
+                        }
                     };
                     readAudio();
                 }
 
             } catch (e) {
+                state.isRecording = false; 
                 console.error(e); return showStatus('錄影引擎初始化失敗，可能是您的設備不支援此編碼規格。');
             }
 
-            state.isRecording = true; state.recordedFrames = 0;
+            state.recordedFrames = 0;
             state.recordingStartTime = performance.now(); state.recordingStartTimeReal = Date.now();
             showStatus('✨ 極致畫質引擎運轉中 (錄製已開始)...');
 
@@ -1958,12 +2028,25 @@
                 ui.loadingOverlay.classList.remove('hidden'); ui.loadingOverlay.style.display = 'flex';
 
                 try {
-                    // 等待所有編碼緩衝區處理完畢
-                    if (state.audioReader) { await state.audioReader.cancel(); state.audioReader = null; }
-                    if (state.videoEncoder) { await state.videoEncoder.flush(); state.videoEncoder.close(); }
-                    if (state.audioEncoder) { await state.audioEncoder.flush(); state.audioEncoder.close(); }
+                    if (state.audioReader) { 
+                        try { await state.audioReader.cancel(); } catch(e){} 
+                        state.audioReader = null; 
+                    }
+                    
+                    // 【安全鎖修復】在 flush 之前嚴格檢查編碼器狀態，防止呼叫已經 Closed 的編碼器而當機
+                    if (state.videoEncoder) {
+                        if (state.videoEncoder.state === 'configured') {
+                            try { await state.videoEncoder.flush(); } catch(e) { console.error('Video Flush Error:', e); }
+                        }
+                        state.videoEncoder.close();
+                    }
+                    if (state.audioEncoder) {
+                        if (state.audioEncoder.state === 'configured') {
+                            try { await state.audioEncoder.flush(); } catch(e) { console.error('Audio Flush Error:', e); }
+                        }
+                        state.audioEncoder.close();
+                    }
 
-                    // 秒殺封裝
                     state.muxer.finalize();
                     const buffer = state.muxer.target.buffer;
                     const blob = new Blob([buffer], { type: 'video/mp4' });
