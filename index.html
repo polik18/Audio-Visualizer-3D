@@ -1033,7 +1033,7 @@
             bgMaskCtx.translate(cx, cy);
             bgMaskCtx.scale(1, 0.2); 
             
-            const rGrad = bgMaskCtx.createRadialGradient(0, 0, 0, 0, 800);
+            const rGrad = bgMaskCtx.createRadialGradient(0, 0, 0, 0, 0, 800);
             rGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
             rGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)');
             rGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
@@ -1591,10 +1591,11 @@
             requestAnimationFrame(animate);
 
             let bass = 0, mid = 0, treble = 0, volume = 0;
+            let currentAudioTime = 0;
             const s = state.vScale, r = state.vRotation * 0.2, d = state.vDensity, cSpeed = state.vColorSpeed, timeNow = Date.now(), timeSec = timeNow * 0.001;
             
             if (!state.isMicMode && state.audioContext && state.audioDuration && state.isPlaying) {
-                const currentAudioTime = state.audioContext.currentTime - state.audioStartTime;
+                currentAudioTime = state.audioContext.currentTime - state.audioStartTime;
                 state.currentProgress = Math.max(0, Math.min(1, currentAudioTime / state.audioDuration)); 
                 if (!state.isDraggingProgress) { ui.progressSlider.value = state.currentProgress * 100; ui.timeCurrent.textContent = formatTime(currentAudioTime); }
             }
@@ -1854,7 +1855,7 @@
                         }
                         state.lastVideoTimestampUs = timestampUs;
 
-                        const frame = new VideoFrame(state.recordCanvas, { timestamp: timestampUs });
+                        const frame = new VideoFrame(state.recordCanvas, { timestamp: timestampUs, duration: Math.round(1_000_000 / (state.recordTargetFps || 30)) });
                         
                         const elapsedMs = now - state.recordingStartTime;
                         const insertKeyframe = (state.recordedFrames === 0) || (elapsedMs - state.lastKeyframeTime > 2000);
@@ -1940,11 +1941,11 @@
             // 只有在支援 WebCodecs 的環境下才進行測試
             if (typeof VideoEncoder !== 'undefined') {
                 const testConfigs = [
-                    { codec: isFast ? 'avc1.42001f' : 'avc1.4d002a', width: W, height: H, bitrate: isFast ? 5_000_000 : 12_000_000, framerate: fps, hardwareAcceleration: 'allow', latencyMode: 'realtime', avc: { format: 'avc' } },
-                    { codec: isFast ? 'avc1.42001f' : 'avc1.4d002a', width: W, height: H, bitrate: isFast ? 5_000_000 : 12_000_000, framerate: fps, hardwareAcceleration: 'allow', avc: { format: 'avc' } }, 
-                    { codec: 'avc1.42E01F', width: W, height: H, bitrate: isFast ? 4_000_000 : 8_000_000, framerate: fps, hardwareAcceleration: 'allow', avc: { format: 'avc' } }, 
-                    { codec: 'avc1.42E01E', width: W, height: H, bitrate: 3_000_000, framerate: 30, hardwareAcceleration: 'allow', avc: { format: 'avc' } }, 
-                    { codec: 'avc1.42E01E', width: Math.floor(W/1.5/2)*2, height: Math.floor(H/1.5/2)*2, bitrate: 2_000_000, framerate: 30, hardwareAcceleration: 'allow', avc: { format: 'avc' } } 
+                    { codec: isFast ? 'avc1.42001f' : 'avc1.4d002a', width: W, height: H, bitrate: isFast ? 5_000_000 : 12_000_000, framerate: fps, hardwareAcceleration: 'no-preference', latencyMode: 'realtime', avc: { format: 'avc' } },
+                    { codec: isFast ? 'avc1.42001f' : 'avc1.4d002a', width: W, height: H, bitrate: isFast ? 5_000_000 : 12_000_000, framerate: fps, hardwareAcceleration: 'no-preference', avc: { format: 'avc' } }, 
+                    { codec: 'avc1.42E01F', width: W, height: H, bitrate: isFast ? 4_000_000 : 8_000_000, framerate: fps, hardwareAcceleration: 'no-preference', avc: { format: 'avc' } }, 
+                    { codec: 'avc1.42E01E', width: W, height: H, bitrate: 3_000_000, framerate: 30, hardwareAcceleration: 'no-preference', avc: { format: 'avc' } }, 
+                    { codec: 'avc1.42E01E', width: Math.floor(W/1.5/2)*2, height: Math.floor(H/1.5/2)*2, bitrate: 2_000_000, framerate: 30, hardwareAcceleration: 'no-preference', avc: { format: 'avc' } } 
                 ];
 
                 try {
@@ -1961,7 +1962,8 @@
             }
 
             // 【終極備案機制】：如果硬體真的完全不吃 WebCodecs，改走通用 WebM 錄影模式
-            state.useMediaRecorderFallback = !selectedConfig;
+            // 沒有 MediaStreamTrackProcessor（如 Firefox）時 MP4 只能無聲，改走有音軌的 WebM 備案
+            state.useMediaRecorderFallback = !selectedConfig || typeof MediaStreamTrackProcessor === 'undefined';
 
             if (state.useMediaRecorderFallback) {
                 // 安全降級解析度，確保手機或舊電腦負擔得起
@@ -2032,7 +2034,8 @@
                         target: new Mp4Muxer.ArrayBufferTarget(),
                         video: { codec: 'avc', width: W, height: H },
                         audio: state.hasAudioTrack ? { codec: 'aac', sampleRate: audioSampleRate, numberOfChannels: audioChannels } : undefined,
-                        fastStart: 'in-memory'
+                        fastStart: 'in-memory',
+                        firstTimestampBehavior: 'offset'
                     });
 
                     state.videoEncoder = new VideoEncoder({
@@ -2047,12 +2050,14 @@
                     state.recordingStartTimeReal = Date.now();
                     state.recordingStartTimeUs = state.recordingStartTime * 1000;
                     state.lastVideoTimestampUs = -1;
+                    state.firstAudioTsUs = null;
                     state.lastKeyframeTime = 0;
 
                     if (state.hasAudioTrack) {
                         state.audioEncoder = new AudioEncoder({
                             output: (chunk, meta) => {
-                                let ts = chunk.timestamp - state.recordingStartTimeUs;
+                                if (state.firstAudioTsUs == null) state.firstAudioTsUs = chunk.timestamp;
+                                let ts = chunk.timestamp - state.firstAudioTsUs;
                                 if (ts < 0) ts = 0;
                                 
                                 const buffer = new ArrayBuffer(chunk.byteLength);
